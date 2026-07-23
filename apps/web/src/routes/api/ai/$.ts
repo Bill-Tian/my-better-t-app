@@ -1,5 +1,5 @@
-import { devToolsMiddleware } from "@ai-sdk/devtools";
-import { google } from "@ai-sdk/google";
+import { createOpenAI } from "@ai-sdk/openai";
+import { env } from "@my-better-t-app/env/server";
 import { createFileRoute } from "@tanstack/react-router";
 import {
   createUIMessageStreamResponse,
@@ -7,7 +7,6 @@ import {
   toUIMessageStream,
   type UIMessage,
   convertToModelMessages,
-  wrapLanguageModel,
 } from "ai";
 
 export const Route = createFileRoute("/api/ai/$")({
@@ -17,12 +16,16 @@ export const Route = createFileRoute("/api/ai/$")({
         try {
           const { messages }: { messages: UIMessage[] } = await request.json();
 
-          const model = wrapLanguageModel({
-            model: google("gemini-2.5-flash"),
-            middleware: devToolsMiddleware(),
+          console.log("messages",messages);
+
+          const sub2api = createOpenAI({
+            name: "chatgpt-5.5",
+            apiKey: env.SUB2API_API_KEY,
+            baseURL: env.SUB2API_BASE_URL,
           });
+
           const result = streamText({
-            model,
+            model: sub2api.chat(env.SUB2API_MODEL),
             messages: await convertToModelMessages(messages),
           });
 

@@ -8,8 +8,7 @@
     "dev:bare": "vite dev"
   },
   "dependencies": {
-    "@ai-sdk/devtools": "^1.0.1",
-    "@ai-sdk/google": "^4.0.7",
+    "@ai-sdk/openai": "^4.0.17",
     "@ai-sdk/react": "^4.0.14",
     "@my-better-t-app/auth": "workspace:*",
     "@my-better-t-app/env": "workspace:*",

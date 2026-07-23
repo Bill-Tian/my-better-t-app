@@ -14,7 +14,12 @@ export const web = await TanStackStart("web", {
     CORS_ORIGIN: alchemy.env.CORS_ORIGIN!,
     BETTER_AUTH_SECRET: alchemy.secret.env.BETTER_AUTH_SECRET!,
     BETTER_AUTH_URL: alchemy.env.BETTER_AUTH_URL!,
-    GOOGLE_GENERATIVE_AI_API_KEY: alchemy.secret.env.GOOGLE_GENERATIVE_AI_API_KEY!,
+    SUB2API_API_KEY: alchemy.secret.env.SUB2API_API_KEY!,
+    SUB2API_BASE_URL: alchemy.env.SUB2API_BASE_URL!,
+    SUB2API_MODEL: alchemy.env.SUB2API_MODEL!,
+    SUB2API_IMAGE_MODEL: alchemy.env.SUB2API_IMAGE_MODEL!,
+    GOOGLE_CLIENT_ID: alchemy.secret.env.GOOGLE_CLIENT_ID!,
+    GOOGLE_CLIENT_SECRET: alchemy.secret.env.GOOGLE_CLIENT_SECRET!,
   },
 });
 

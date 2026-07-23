@@ -121,6 +121,20 @@ export default function SignInForm({ onSwitchToSignUp }: { onSwitchToSignUp: () 
         </form.Subscribe>
       </form>
 
+      <Button
+        type="button"
+        variant="outline"
+        className="w-full mt-4"
+        onClick={async () => {
+          await authClient.signIn.social({
+            provider: "google",
+            callbackURL: "/dashboard",
+          });
+        }}
+      >
+        Continue with Google
+      </Button>
+
       <div className="mt-4 text-center">
         <Button
           variant="link"

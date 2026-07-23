@@ -81,12 +81,9 @@ importers:
 
   apps/web:
     dependencies:
-      '@ai-sdk/devtools':
-        specifier: ^1.0.1
-        version: 1.0.6
-      '@ai-sdk/google':
-        specifier: ^4.0.7
-        version: 4.0.21(zod@4.4.3)
+      '@ai-sdk/openai':
+        specifier: ^4.0.17
+        version: 4.0.17(zod@4.4.3)
       '@ai-sdk/react':
         specifier: ^4.0.14
         version: 4.0.37(react@19.2.8)(zod@4.4.3)
@@ -350,25 +347,20 @@ importers:
 
 packages:
 
-  '@ai-sdk/devtools@1.0.6':
-    resolution: {integrity: sha512-1ZvwlvumHI/4zVe4j5GyWhHzzVXWdULPVKibIF1sxOT/01I26qTRA86NucaeJisrCeA1YNB1uEo4uQrdoyBcnA==}
-    engines: {node: '>=22'}
-    hasBin: true
-
   '@ai-sdk/gateway@4.0.26':
     resolution: {integrity: sha512-b/nc3COKtk8IxzgcCi418IoZFky/Bw+Jg8+J0/SBBnu/mOXA4bkIKCu81coEtJAWuH2g5Fvvsa0ar7EpmzNWTw==}
     engines: {node: '>=22'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
 
-  '@ai-sdk/google@4.0.21':
-    resolution: {integrity: sha512-ijIvZnnSmLKT2yXnd4Aym0sM3/CsBHx1U7H/++wTUOdbIMKn8pbfsnGArLXksjlHUxWagFMh7zdGhj5Vb5cQeA==}
+  '@ai-sdk/mcp@2.0.16':
+    resolution: {integrity: sha512-jC2r+StEuk8uIldfP4j8nBwOEBJ2TRwy/bz71SHMZ3NG6PSbvRPXGfyoHHR6JTm1O5GcIww0f6B8LznzkrseDA==}
     engines: {node: '>=22'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
 
-  '@ai-sdk/mcp@2.0.16':
-    resolution: {integrity: sha512-jC2r+StEuk8uIldfP4j8nBwOEBJ2TRwy/bz71SHMZ3NG6PSbvRPXGfyoHHR6JTm1O5GcIww0f6B8LznzkrseDA==}
+  '@ai-sdk/openai@4.0.17':
+    resolution: {integrity: sha512-Zme92Jvleq2kC11/vvqaA37Q2ihRXpLTLuTwQMo1zYOjK+K7+9PmWIuSI+En5ws6EQ7/nwcfCWlP3YeRfh5VbQ==}
     engines: {node: '>=22'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
@@ -5410,12 +5402,6 @@ packages:
 
 snapshots:
 
-  '@ai-sdk/devtools@1.0.6':
-    dependencies:
-      '@ai-sdk/provider': 4.0.3
-      '@hono/node-server': 1.19.14(hono@4.12.31)
-      hono: 4.12.31
-
   '@ai-sdk/gateway@4.0.26(zod@4.4.3)':
     dependencies:
       '@ai-sdk/provider': 4.0.3
@@ -5423,17 +5409,17 @@ snapshots:
       '@vercel/oidc': 3.2.0
       zod: 4.4.3
 
-  '@ai-sdk/google@4.0.21(zod@4.4.3)':
-    dependencies:
-      '@ai-sdk/provider': 4.0.3
-      '@ai-sdk/provider-utils': 5.0.12(zod@4.4.3)
-      zod: 4.4.3
-
   '@ai-sdk/mcp@2.0.16(zod@4.4.3)':
     dependencies:
       '@ai-sdk/provider': 4.0.3
       '@ai-sdk/provider-utils': 5.0.12(zod@4.4.3)
       pkce-challenge: 5.0.1
+      zod: 4.4.3
+
+  '@ai-sdk/openai@4.0.17(zod@4.4.3)':
+    dependencies:
+      '@ai-sdk/provider': 4.0.3
+      '@ai-sdk/provider-utils': 5.0.12(zod@4.4.3)
       zod: 4.4.3
 
   '@ai-sdk/provider-utils@5.0.12(zod@4.4.3)':
