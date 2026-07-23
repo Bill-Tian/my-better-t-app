@@ -42,6 +42,31 @@ pnpm run dev
 
 Open [http://localhost:3001](http://localhost:3001) in your browser to see the fullstack application.
 
+## Qwen Image
+
+The image studio supports `qwen-image-2.0-pro` through the native DashScope synchronous API.
+Add the following variables to `apps/web/.env`:
+
+```bash
+DASHSCOPE_API_KEY=sk-your-api-key
+# Optional. Defaults to the Beijing endpoint:
+DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com
+```
+
+Beijing and Singapore API keys cannot be mixed. For Singapore, use
+`https://dashscope-intl.aliyuncs.com`; a workspace-specific Model Studio domain can also be
+provided as the base URL.
+
+## Voice Design
+
+The authenticated `/voice-design` route creates custom Qwen-TTS or CosyVoice voices from a
+natural-language description and returns a playable preview plus the reusable voice ID. It
+reuses `DASHSCOPE_API_KEY` and `DASHSCOPE_BASE_URL`.
+
+Qwen-TTS voice creation may be billed per successful voice. CosyVoice creation is free but is
+available only in the Beijing region. For the widest model support, configure the
+workspace-specific Model Studio domain as `DASHSCOPE_BASE_URL`.
+
 ## UI Customization
 
 React web apps in this stack share shadcn/ui primitives through `packages/ui`.

@@ -7,9 +7,41 @@ import { z } from "zod";
 
 const requestSchema = z.object({
   prompt: z.string().trim().min(3).max(2000),
+  model: z.enum(["qwen-image-2.0-pro", "sub2api"]).default("sub2api"),
   size: z.enum(["1024x1024", "1024x1536", "1536x1024"]),
   quality: z.enum(["low", "medium", "high"]),
   background: z.enum(["auto", "opaque", "transparent"]),
+});
+
+type ImageSize = z.infer<typeof requestSchema>["size"];
+
+const qwenSizeByImageSize: Record<ImageSize, string> = {
+  "1024x1024": "2048*2048",
+  "1024x1536": "1728*2368",
+  "1536x1024": "2368*1728",
+};
+
+const qwenResponseSchema = z.object({
+  output: z.object({
+    choices: z.array(
+      z.object({
+        message: z.object({
+          content: z.array(
+            z.object({
+              image: z.string().url(),
+            }),
+          ),
+        }),
+      }),
+    ),
+  }),
+  request_id: z.string().optional(),
+});
+
+const qwenErrorSchema = z.object({
+  code: z.string().optional(),
+  message: z.string().optional(),
+  request_id: z.string().optional(),
 });
 
 const json = (body: unknown, status = 200) =>
@@ -20,6 +52,98 @@ const json = (body: unknown, status = 200) =>
       "Cache-Control": "no-store",
     },
   });
+
+const getDashScopeEndpoint = () => {
+  const defaultBaseUrl = "https://dashscope.aliyuncs.com";
+  const baseUrl = (env.DASHSCOPE_BASE_URL || defaultBaseUrl).replace(/\/+$/, "");
+
+  if (baseUrl.endsWith("/multimodal-generation/generation")) {
+    return baseUrl;
+  }
+
+  const apiBaseUrl = baseUrl.endsWith("/api/v1") ? baseUrl : `${baseUrl}/api/v1`;
+  console.log("apiBaseUrl", apiBaseUrl);
+
+  return `${apiBaseUrl}/services/aigc/multimodal-generation/generation`;
+};
+
+const arrayBufferToBase64 = (buffer: ArrayBuffer) => {
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+  let binary = "";
+
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+
+  return btoa(binary);
+};
+
+const generateWithQwen = async (prompt: string, size: ImageSize) => {
+  if (!env.DASHSCOPE_API_KEY) {
+    throw new Error("DASHSCOPE_API_KEY_MISSING");
+  }
+
+  const response = await fetch(getDashScopeEndpoint(), {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${env.DASHSCOPE_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "qwen-image-2.0-pro",
+      input: {
+        messages: [
+          {
+            role: "user",
+            content: [{ text: prompt }],
+          },
+        ],
+      },
+      parameters: {
+        size: qwenSizeByImageSize[size],
+        n: 1,
+        prompt_extend: true,
+        watermark: false,
+      },
+    }),
+    signal: AbortSignal.timeout(180_000),
+  });
+
+  const payload: unknown = await response.json();
+
+  if (!response.ok) {
+    const qwenError = qwenErrorSchema.safeParse(payload);
+    const details = qwenError.success
+      ? [qwenError.data.code, qwenError.data.message].filter(Boolean).join(": ")
+      : `HTTP ${response.status}`;
+    throw new Error(`DASHSCOPE_REQUEST_FAILED:${details || `HTTP ${response.status}`}`);
+  }
+
+  const result = qwenResponseSchema.safeParse(payload);
+  const imageUrl = result.success
+    ? result.data.output.choices[0]?.message.content[0]?.image
+    : undefined;
+
+  if (!imageUrl) {
+    throw new Error("DASHSCOPE_IMAGE_MISSING");
+  }
+
+  // DashScope image URLs expire after 24 hours, so persist the bytes in the
+  // response format already used by the image studio instead of exposing the URL.
+  const imageResponse = await fetch(imageUrl, {
+    signal: AbortSignal.timeout(60_000),
+  });
+
+  if (!imageResponse.ok) {
+    throw new Error(`DASHSCOPE_IMAGE_DOWNLOAD_FAILED:HTTP ${imageResponse.status}`);
+  }
+
+  return {
+    base64: arrayBufferToBase64(await imageResponse.arrayBuffer()),
+    mediaType: imageResponse.headers.get("content-type") || "image/png",
+  };
+};
 
 export const Route = createFileRoute("/api/image/$")({
   server: {
@@ -38,9 +162,19 @@ export const Route = createFileRoute("/api/image/$")({
           return json({ error: "请检查提示词和生成参数。" }, 400);
         }
 
-        const { prompt, size, quality, background } = body.data;
+        const { prompt, model, size, quality, background } = body.data;
 
         try {
+          if (model === "qwen-image-2.0-pro") {
+            const image = await generateWithQwen(prompt, size);
+
+            return json({
+              image,
+              prompt,
+              model,
+            });
+          }
+
           const sub2api = createOpenAI({
             name: "sub2api",
             apiKey: env.SUB2API_API_KEY,
@@ -70,12 +204,17 @@ export const Route = createFileRoute("/api/image/$")({
           let imageBase64 = "";
 
           for await (const part of result.fullStream) {
-            if (
-              part.type === "tool-result" &&
-              part.toolName === "image_generation" &&
-              part.output.result
-            ) {
-              imageBase64 = part.output.result;
+            if (part.type === "tool-result" && part.toolName === "image_generation") {
+              const output = part.output;
+
+              if (
+                typeof output === "object" &&
+                output !== null &&
+                "result" in output &&
+                typeof output.result === "string"
+              ) {
+                imageBase64 = output.result;
+              }
             }
           }
 
@@ -102,18 +241,32 @@ export const Route = createFileRoute("/api/image/$")({
 
           const message = error instanceof Error ? error.message : "";
           const isTimeout = error instanceof DOMException && error.name === "TimeoutError";
+          const isQwen = model === "qwen-image-2.0-pro";
+          let errorMessage = "图片生成失败，请稍后重试。";
+
+          if (isTimeout) {
+            errorMessage = "图片生成超时，请稍后重试。";
+          } else if (message === "DASHSCOPE_API_KEY_MISSING") {
+            errorMessage = "尚未配置 DASHSCOPE_API_KEY，无法使用千问生图。";
+          } else if (
+            message.includes("InvalidApiKey") ||
+            message.includes("Authentication") ||
+            message.includes("401")
+          ) {
+            errorMessage = "千问 API Key 无效或与当前地域不匹配，请检查 DashScope 配置。";
+          } else if (isQwen) {
+            errorMessage = "千问图片生成失败，请检查地域配置或稍后重试。";
+          } else if (
+            message.includes("502") ||
+            message.includes("504") ||
+            message.includes("Bad Gateway") ||
+            message.includes("Gateway Timeout")
+          ) {
+            errorMessage = "Sub2API 图像上游暂时不可用，请检查图像模型配置或稍后重试。";
+          }
 
           return json(
-            {
-              error: isTimeout
-                ? "图片生成超过 3 分钟，请降低质量后重试。"
-                : message.includes("502") ||
-                    message.includes("504") ||
-                    message.includes("Bad Gateway") ||
-                    message.includes("Gateway Timeout")
-                  ? "Sub2API 图像上游暂时不可用，请检查图像模型配置或稍后重试。"
-                  : "图片生成失败，请稍后重试。",
-            },
+            { error: errorMessage },
             isTimeout ? 504 : 502,
           );
         }

@@ -19,6 +19,7 @@ export const Route = createFileRoute("/_auth/image")({
 
 type ImageSize = "1024x1024" | "1024x1536" | "1536x1024";
 type ImageQuality = "low" | "medium" | "high";
+type ImageModel = "qwen-image-2.0-pro" | "sub2api";
 // type ImageBackground = "auto" | "opaque" | "transparent";
 
 type GeneratedImage = {
@@ -48,8 +49,22 @@ const qualityOptions: Array<{ value: ImageQuality; label: string }> = [
   { value: "high", label: "精细" },
 ];
 
+const modelOptions: Array<{ value: ImageModel; label: string; description: string }> = [
+  {
+    value: "qwen-image-2.0-pro",
+    label: "千问 Image 2.0 Pro",
+    description: "复杂文字与中文渲染",
+  },
+  {
+    value: "sub2api",
+    label: "Sub2API",
+    description: "当前配置的图像模型",
+  },
+];
+
 function ImageStudio() {
   const [prompt, setPrompt] = useState("");
+  const [model, setModel] = useState<ImageModel>("qwen-image-2.0-pro");
   const [size, setSize] = useState<ImageSize>("1024x1024");
   const [quality, setQuality] = useState<ImageQuality>("medium");
   // const [background, setBackground] = useState<ImageBackground>("auto");
@@ -76,6 +91,7 @@ function ImageStudio() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           prompt: cleanPrompt,
+          model,
           size,
           quality,
           background: 'auto',
@@ -123,6 +139,28 @@ function ImageStudio() {
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
+            <div className="space-y-2">
+              <Label htmlFor="image-model">生成模型</Label>
+              <select
+                id="image-model"
+                value={model}
+                onChange={(event) => setModel(event.target.value as ImageModel)}
+                className="h-10 w-full border border-input bg-background px-3 text-xs outline-none focus:border-ring focus:ring-1 focus:ring-ring/50"
+                disabled={isGenerating}
+              >
+                {modelOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label} · {option.description}
+                  </option>
+                ))}
+              </select>
+              {model === "qwen-image-2.0-pro" && (
+                <p className="text-[10px]/relaxed text-muted-foreground">
+                  使用 DashScope 原生同步接口，自动扩写提示词并生成无水印 PNG。
+                </p>
+              )}
+            </div>
+
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label htmlFor="image-prompt">画面描述</Label>
@@ -174,23 +212,25 @@ function ImageStudio() {
               </div>
             </fieldset>
 
-            <fieldset className="space-y-2">
-              <legend className="text-xs font-medium">生成质量</legend>
-              <div className="grid grid-cols-3 border">
-                {qualityOptions.map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    aria-pressed={quality === option.value}
-                    onClick={() => setQuality(option.value)}
-                    className="border-r px-2 py-2 text-xs transition-colors last:border-r-0 aria-pressed:bg-secondary aria-pressed:text-foreground"
-                    disabled={isGenerating}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-            </fieldset>
+            {model === "sub2api" && (
+              <fieldset className="space-y-2">
+                <legend className="text-xs font-medium">生成质量</legend>
+                <div className="grid grid-cols-3 border">
+                  {qualityOptions.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      aria-pressed={quality === option.value}
+                      onClick={() => setQuality(option.value)}
+                      className="border-r px-2 py-2 text-xs transition-colors last:border-r-0 aria-pressed:bg-secondary aria-pressed:text-foreground"
+                      disabled={isGenerating}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </fieldset>
+            )}
 
             {/* <div className="space-y-2">
               <Label htmlFor="image-background">背景</Label>
@@ -282,7 +322,9 @@ function ImageStudio() {
             <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border px-3 py-2 text-[10px] text-muted-foreground">
               <span className="inline-flex items-center gap-1.5">
                 <ImageIcon className="size-3" />
-                {size} · {qualityOptions.find((item) => item.value === quality)?.label}
+                {size}
+                {model === "sub2api" &&
+                  ` · ${qualityOptions.find((item) => item.value === quality)?.label}`}
               </span>
               <span>{result.model}</span>
             </div>

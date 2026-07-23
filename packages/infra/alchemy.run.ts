@@ -18,6 +18,8 @@ export const web = await TanStackStart("web", {
     SUB2API_BASE_URL: alchemy.env.SUB2API_BASE_URL!,
     SUB2API_MODEL: alchemy.env.SUB2API_MODEL!,
     SUB2API_IMAGE_MODEL: alchemy.env.SUB2API_IMAGE_MODEL!,
+    DASHSCOPE_API_KEY: alchemy.secret.env.DASHSCOPE_API_KEY!,
+    DASHSCOPE_BASE_URL: alchemy.env.DASHSCOPE_BASE_URL!,
     GOOGLE_CLIENT_ID: alchemy.secret.env.GOOGLE_CLIENT_ID!,
     GOOGLE_CLIENT_SECRET: alchemy.secret.env.GOOGLE_CLIENT_SECRET!,
   },
