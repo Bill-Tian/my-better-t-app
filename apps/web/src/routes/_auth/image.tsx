@@ -1,12 +1,16 @@
 import { Button } from "@my-better-t-app/ui/components/button";
-import { Label } from "@my-better-t-app/ui/components/label";
 import { Skeleton } from "@my-better-t-app/ui/components/skeleton";
 import { Textarea } from "@my-better-t-app/ui/components/textarea";
 import { createFileRoute } from "@tanstack/react-router";
 import {
   ArrowDownToLineIcon,
+  BotIcon,
+  ChevronDownIcon,
+  DicesIcon,
   ImageIcon,
+  Layers3Icon,
   Loader2Icon,
+  RatioIcon,
   SparklesIcon,
   WandSparklesIcon,
 } from "lucide-react";
@@ -19,23 +23,20 @@ export const Route = createFileRoute("/_auth/image")({
 
 type ImageSize = "1024x1024" | "1024x1536" | "1536x1024";
 type ImageQuality = "low" | "medium" | "high";
-type ImageModel = "qwen-image-2.0-pro" | "sub2api";
-// type ImageBackground = "auto" | "opaque" | "transparent";
+type ImageModel = "qwen-image-2.0-pro" | "grok-imagine-image" | "sub2api";
+type ImageQuantity = 1 | 2 | 3 | 4;
 
-type GeneratedImage = {
-  image: {
-    base64: string;
-    mediaType: string;
-  };
+type GeneratedAsset = {
+  base64: string;
+  mediaType: string;
+};
+
+type GenerationResponse = {
+  images?: GeneratedAsset[];
+  image?: GeneratedAsset;
   prompt: string;
   model: string;
 };
-
-const examplePrompts = [
-  "雨夜里的未来上海街头，霓虹灯倒映在湿润路面，电影感",
-  "极简主义香水产品摄影，米白色背景，柔和侧光，高级杂志风",
-  "一只戴宇航员头盔的橘猫站在月球，复古科幻海报风格",
-];
 
 const sizeOptions: Array<{ value: ImageSize; label: string; ratio: string }> = [
   { value: "1024x1024", label: "方形", ratio: "1:1" },
@@ -49,32 +50,63 @@ const qualityOptions: Array<{ value: ImageQuality; label: string }> = [
   { value: "high", label: "精细" },
 ];
 
-const modelOptions: Array<{ value: ImageModel; label: string; description: string }> = [
-  {
-    value: "qwen-image-2.0-pro",
-    label: "千问 Image 2.0 Pro",
-    description: "复杂文字与中文渲染",
-  },
-  {
-    value: "sub2api",
-    label: "Sub2API",
-    description: "当前配置的图像模型",
-  },
+const modelOptions: Array<{ value: ImageModel; label: string }> = [
+  { value: "qwen-image-2.0-pro", label: "千问 Image 2.0 Pro" },
+  { value: "grok-imagine-image", label: "Grok Imagine · Sub2API" },
+  { value: "sub2api", label: "GPT Image · Sub2API" },
 ];
+
+const quantityOptions: ImageQuantity[] = [1, 2, 3, 4];
 
 function ImageStudio() {
   const [prompt, setPrompt] = useState("");
   const [model, setModel] = useState<ImageModel>("qwen-image-2.0-pro");
   const [size, setSize] = useState<ImageSize>("1024x1024");
   const [quality, setQuality] = useState<ImageQuality>("medium");
-  // const [background, setBackground] = useState<ImageBackground>("auto");
-  const [result, setResult] = useState<GeneratedImage | null>(null);
+  const [quantity, setQuantity] = useState<ImageQuantity>(1);
+  const [result, setResult] = useState<GenerationResponse | null>(null);
+  const [selectedImage, setSelectedImage] = useState(0);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isGeneratingIdea, setIsGeneratingIdea] = useState(false);
 
-  const imageUrl = useMemo(() => {
-    if (!result) return "";
-    return `data:${result.image.mediaType};base64,${result.image.base64}`;
+  const images = useMemo(() => {
+    if (!result) return [];
+    return result.images ?? (result.image ? [result.image] : []);
   }, [result]);
+
+  const selectedImageUrl = useMemo(() => {
+    const image = images[selectedImage];
+    return image ? `data:${image.mediaType};base64,${image.base64}` : "";
+  }, [images, selectedImage]);
+
+  const selectedSize = sizeOptions.find((option) => option.value === size);
+  const selectedModel = modelOptions.find((option) => option.value === model);
+
+  const generateIdea = async () => {
+    if (isGenerating || isGeneratingIdea) return;
+
+    setIsGeneratingIdea(true);
+
+    try {
+      const response = await fetch("/api/image", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "generate-idea" }),
+      });
+      const data = (await response.json()) as { prompt?: string; error?: string };
+
+      if (!response.ok || !data.prompt) {
+        throw new Error(data.error || "AI 灵感生成失败");
+      }
+
+      setPrompt(data.prompt);
+      toast.success("Grok 4.5 已生成一条新灵感");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "AI 灵感生成失败，请稍后重试");
+    } finally {
+      setIsGeneratingIdea(false);
+    }
+  };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -84,6 +116,7 @@ function ImageStudio() {
 
     setIsGenerating(true);
     setResult(null);
+    setSelectedImage(0);
 
     try {
       const response = await fetch("/api/image", {
@@ -94,17 +127,22 @@ function ImageStudio() {
           model,
           size,
           quality,
-          background: 'auto',
+          quantity,
+          background: "auto",
         }),
       });
-      const data = (await response.json()) as GeneratedImage | { error?: string };
+      const data = (await response.json()) as GenerationResponse | { error?: string };
 
-      if (!response.ok || !("image" in data)) {
+      if (
+        !response.ok ||
+        !("prompt" in data) ||
+        (!data.images?.length && !data.image)
+      ) {
         throw new Error("error" in data ? data.error : "图片生成失败");
       }
 
       setResult(data);
-      toast.success("图片已生成");
+      toast.success(data.images && data.images.length > 1 ? `已生成 ${data.images.length} 张图片` : "图片已生成");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "图片生成失败，请稍后重试");
     } finally {
@@ -113,224 +151,265 @@ function ImageStudio() {
   };
 
   const downloadImage = () => {
-    if (!imageUrl) return;
+    if (!selectedImageUrl) return;
 
     const anchor = document.createElement("a");
-    anchor.href = imageUrl;
-    anchor.download = `ai-image-${Date.now()}.png`;
+    anchor.href = selectedImageUrl;
+    anchor.download = `ai-image-${selectedImage + 1}-${Date.now()}.png`;
     anchor.click();
   };
 
   return (
-    <main className="min-h-0 overflow-y-auto bg-[radial-gradient(circle_at_top_left,var(--color-primary)/0.09,transparent_28rem)]">
-      <div className="mx-auto grid min-h-full w-full max-w-7xl grid-cols-1 lg:grid-cols-[22rem_minmax(0,1fr)]">
-        <section className="border-b bg-background/85 p-5 backdrop-blur lg:border-r lg:border-b-0 lg:p-7">
-          <div className="mb-7">
-            <div className="mb-3 flex size-9 items-center justify-center border bg-primary text-primary-foreground">
-              <WandSparklesIcon className="size-4" />
-            </div>
-            <p className="mb-1 text-[10px] font-medium tracking-[0.22em] text-muted-foreground uppercase">
+    <main className="relative grid min-h-0 grid-rows-[minmax(0,1fr)_auto] overflow-hidden bg-[radial-gradient(circle_at_top,var(--color-primary)/0.08,transparent_32rem)]">
+      <section className="relative flex min-h-0 flex-col px-3 pt-3 sm:px-5 sm:pt-5">
+        <div className="pointer-events-none absolute top-6 left-6 z-10 flex items-center gap-2.5 rounded-full border border-white/10 bg-background/70 px-3 py-2 shadow-lg backdrop-blur-xl sm:top-8 sm:left-8">
+          <span className="flex size-7 items-center justify-center rounded-full bg-primary text-primary-foreground">
+            <WandSparklesIcon className="size-3.5" />
+          </span>
+          <span>
+            <span className="block text-[9px] font-medium tracking-[0.2em] text-muted-foreground uppercase">
               AI Image Studio
-            </p>
-            <h1 className="text-2xl font-semibold tracking-tight">把想法变成画面</h1>
-            <p className="mt-2 text-xs/relaxed text-muted-foreground">
-              描述主体、环境、光线和风格，细节越清楚，结果越接近你的想象。
-            </p>
-          </div>
+            </span>
+            <span className="block text-xs font-medium">生成画布</span>
+          </span>
+        </div>
 
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="space-y-2">
-              <Label htmlFor="image-model">生成模型</Label>
-              <select
-                id="image-model"
-                value={model}
-                onChange={(event) => setModel(event.target.value as ImageModel)}
-                className="h-10 w-full border border-input bg-background px-3 text-xs outline-none focus:border-ring focus:ring-1 focus:ring-ring/50"
-                disabled={isGenerating}
-              >
-                {modelOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label} · {option.description}
-                  </option>
-                ))}
-              </select>
-              {model === "qwen-image-2.0-pro" && (
-                <p className="text-[10px]/relaxed text-muted-foreground">
-                  使用 DashScope 原生同步接口，自动扩写提示词并生成无水印 PNG。
+        {images.length > 0 && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={downloadImage}
+            className="absolute top-6 right-6 z-10 rounded-full bg-background/70 shadow-lg backdrop-blur-xl sm:top-8 sm:right-8"
+          >
+            <ArrowDownToLineIcon />
+            下载{images.length > 1 ? `第 ${selectedImage + 1} 张` : " PNG"}
+          </Button>
+        )}
+
+        <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-2xl border border-border/70 bg-[linear-gradient(45deg,var(--color-muted)_25%,transparent_25%,transparent_75%,var(--color-muted)_75%),linear-gradient(45deg,var(--color-muted)_25%,transparent_25%,transparent_75%,var(--color-muted)_75%)] bg-[length:24px_24px] bg-[position:0_0,12px_12px] shadow-inner">
+          {isGenerating ? (
+            <div className="absolute inset-0 bg-background/90 p-4 backdrop-blur-sm sm:p-8">
+              <Skeleton className="h-full w-full rounded-xl" />
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <div className="flex size-14 items-center justify-center rounded-full border bg-background shadow-xl">
+                  <Loader2Icon className="size-5 animate-spin" />
+                </div>
+                <p className="mt-4 text-sm font-medium">
+                  正在绘制 {quantity > 1 ? `${quantity} 张画面` : "画面"}
                 </p>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="image-prompt">画面描述</Label>
-                <span className="text-[10px] tabular-nums text-muted-foreground">
-                  {prompt.length}/2000
-                </span>
+                <p className="mt-1 text-xs text-muted-foreground">灵感正在逐渐清晰</p>
               </div>
+            </div>
+          ) : images.length > 0 ? (
+            <div
+              className={`grid h-full w-full gap-2 p-2 ${
+                images.length === 1
+                  ? "grid-cols-1"
+                  : images.length === 2
+                    ? "grid-cols-2"
+                    : "grid-cols-2 grid-rows-2"
+              }`}
+            >
+              {images.map((image, index) => (
+                <button
+                  key={`${result?.model}-${index}`}
+                  type="button"
+                  onClick={() => setSelectedImage(index)}
+                  aria-label={`选择第 ${index + 1} 张图片`}
+                  aria-pressed={selectedImage === index}
+                  className="relative flex min-h-0 items-center justify-center overflow-hidden rounded-xl bg-black/10 outline-none ring-primary transition aria-pressed:ring-2 focus-visible:ring-2"
+                >
+                  <img
+                    src={`data:${image.mediaType};base64,${image.base64}`}
+                    alt={`${result?.prompt ?? prompt}，第 ${index + 1} 张`}
+                    className="h-full w-full object-contain"
+                  />
+                  {images.length > 1 && (
+                    <span className="absolute right-2 bottom-2 rounded-full bg-black/60 px-2 py-1 text-[10px] text-white backdrop-blur">
+                      {index + 1}/{images.length}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="mx-auto max-w-sm px-8 text-center">
+              <div className="mx-auto flex size-16 items-center justify-center rounded-full border bg-background/90 shadow-xl">
+                <ImageIcon className="size-6 text-muted-foreground" />
+              </div>
+              <h1 className="mt-5 text-lg font-semibold tracking-tight">把想法变成画面</h1>
+              <p className="mt-2 text-xs/relaxed text-muted-foreground">
+                在下方描述你想看到的内容，整片画布都为创作留白。
+              </p>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className="relative z-20 px-3 pt-3 pb-4 sm:px-5 sm:pt-4 sm:pb-5">
+        <form
+          onSubmit={handleSubmit}
+          className="mx-auto max-w-5xl rounded-2xl border border-border/80 bg-background/90 p-2 shadow-[0_-16px_50px_-24px_rgba(0,0,0,0.45)] backdrop-blur-2xl"
+        >
+          <div className="flex items-start gap-2 px-2 pt-2">
+            <SparklesIcon className="mt-1 size-4 shrink-0 text-primary" />
+            <div className="min-w-0 flex-1">
+              <label htmlFor="image-prompt" className="sr-only">
+                画面描述
+              </label>
               <Textarea
                 id="image-prompt"
                 value={prompt}
                 onChange={(event) => setPrompt(event.target.value.slice(0, 2000))}
-                placeholder="例如：清晨薄雾中的中式庭院，阳光穿过竹林，胶片质感..."
-                className="min-h-32 bg-background/70 text-sm/relaxed"
-                disabled={isGenerating}
+                onKeyDown={(event) => {
+                  if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+                    event.currentTarget.form?.requestSubmit();
+                  }
+                }}
+                placeholder="描述你想创作的画面、光线、构图与风格…"
+                className="min-h-18 resize-none border-0 bg-transparent px-0 py-0 text-sm/relaxed shadow-none focus-visible:ring-0 sm:min-h-20"
+                disabled={isGenerating || isGeneratingIdea}
                 autoFocus
               />
-              <div className="space-y-1.5 pt-1">
-                <p className="text-[10px] tracking-wide text-muted-foreground uppercase">试试这些灵感</p>
-                {examplePrompts.map((example) => (
-                  <button
-                    key={example}
-                    type="button"
-                    onClick={() => setPrompt(example)}
-                    className="block w-full border-l px-2 py-1 text-left text-[11px]/relaxed text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
-                    disabled={isGenerating}
-                  >
-                    {example}
-                  </button>
-                ))}
-              </div>
             </div>
+            <span className="pt-0.5 text-[10px] tabular-nums text-muted-foreground">
+              {prompt.length}/2000
+            </span>
+          </div>
 
-            <fieldset className="space-y-2">
-              <legend className="text-xs font-medium">画布比例</legend>
-              <div className="grid grid-cols-3 gap-1.5">
-                {sizeOptions.map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    aria-pressed={size === option.value}
-                    onClick={() => setSize(option.value)}
-                    className="border px-2 py-2 text-left transition-colors aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground"
-                    disabled={isGenerating}
-                  >
-                    <span className="block text-xs font-medium">{option.label}</span>
-                    <span className="block text-[10px] opacity-70">{option.ratio}</span>
-                  </button>
-                ))}
-              </div>
-            </fieldset>
-
-            {model === "sub2api" && (
-              <fieldset className="space-y-2">
-                <legend className="text-xs font-medium">生成质量</legend>
-                <div className="grid grid-cols-3 border">
-                  {qualityOptions.map((option) => (
-                    <button
-                      key={option.value}
-                      type="button"
-                      aria-pressed={quality === option.value}
-                      onClick={() => setQuality(option.value)}
-                      className="border-r px-2 py-2 text-xs transition-colors last:border-r-0 aria-pressed:bg-secondary aria-pressed:text-foreground"
-                      disabled={isGenerating}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
-              </fieldset>
-            )}
-
-            {/* <div className="space-y-2">
-              <Label htmlFor="image-background">背景</Label>
+          <div className="mt-2 flex flex-wrap items-center gap-1.5 rounded-xl border border-border/60 bg-muted/45 p-1.5">
+            <label className="relative inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs transition hover:bg-background">
+              <BotIcon className="size-3.5 text-muted-foreground" />
+              <span className="max-w-32 truncate">{selectedModel?.label}</span>
+              <ChevronDownIcon className="size-3 text-muted-foreground" />
               <select
-                id="image-background"
-                value={background}
-                onChange={(event) => setBackground(event.target.value as ImageBackground)}
-                className="h-8 w-full border border-input bg-background px-2.5 text-xs outline-none focus:border-ring focus:ring-1 focus:ring-ring/50"
+                value={model}
+                onChange={(event) => setModel(event.target.value as ImageModel)}
+                className="absolute inset-0 cursor-pointer opacity-0"
+                aria-label="生成模型"
                 disabled={isGenerating}
               >
-                <option value="auto">自动选择</option>
-                <option value="opaque">不透明背景</option>
-                <option value="transparent">透明背景</option>
+                {modelOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
               </select>
-            </div> */}
+            </label>
+
+            <span className="h-4 w-px bg-border" aria-hidden="true" />
+
+            <label className="relative inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs transition hover:bg-background">
+              <RatioIcon className="size-3.5 text-muted-foreground" />
+              <span>{selectedSize?.ratio}</span>
+              <ChevronDownIcon className="size-3 text-muted-foreground" />
+              <select
+                value={size}
+                onChange={(event) => setSize(event.target.value as ImageSize)}
+                className="absolute inset-0 cursor-pointer opacity-0"
+                aria-label="画布比例"
+                disabled={isGenerating}
+              >
+                {sizeOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label} · {option.ratio}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {model === "sub2api" && (
+              <>
+                <span className="h-4 w-px bg-border" aria-hidden="true" />
+                <label className="relative inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs transition hover:bg-background">
+                  <span>{qualityOptions.find((option) => option.value === quality)?.label}质量</span>
+                  <ChevronDownIcon className="size-3 text-muted-foreground" />
+                  <select
+                    value={quality}
+                    onChange={(event) => setQuality(event.target.value as ImageQuality)}
+                    className="absolute inset-0 cursor-pointer opacity-0"
+                    aria-label="生成质量"
+                    disabled={isGenerating}
+                  >
+                    {qualityOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </>
+            )}
+
+            <span className="h-4 w-px bg-border" aria-hidden="true" />
+
+            <label className="relative inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs transition hover:bg-background">
+              <Layers3Icon className="size-3.5 text-muted-foreground" />
+              <span>{quantity} 张</span>
+              <ChevronDownIcon className="size-3 text-muted-foreground" />
+              <select
+                value={quantity}
+                onChange={(event) => setQuantity(Number(event.target.value) as ImageQuantity)}
+                className="absolute inset-0 cursor-pointer opacity-0"
+                aria-label="生成数量"
+                disabled={isGenerating}
+              >
+                {quantityOptions.map((option) => (
+                  <option key={option} value={option}>
+                    {option} 张
+                  </option>
+                ))}
+              </select>
+            </label>
 
             <Button
-              type="submit"
-              size="lg"
-              className="w-full"
-              disabled={isGenerating || prompt.trim().length < 3}
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={generateIdea}
+              className="rounded-lg"
+              disabled={isGenerating || isGeneratingIdea}
             >
-              {isGenerating ? (
+              {isGeneratingIdea ? (
                 <>
                   <Loader2Icon className="animate-spin" />
-                  正在绘制
+                  构思中
                 </>
               ) : (
                 <>
-                  <SparklesIcon />
-                  生成图片
+                  <DicesIcon />
+                  AI 灵感
                 </>
               )}
             </Button>
-            <p className="text-center text-[10px]/relaxed text-muted-foreground">
-              AI 生成内容可能存在偏差，请勿用于违法或侵权用途。
-            </p>
-          </form>
-        </section>
 
-        <section className="flex min-h-[32rem] flex-col p-4 sm:p-7 lg:p-10">
-          <div className="mb-4 flex items-end justify-between gap-4">
-            <div>
-              <p className="text-[10px] font-medium tracking-[0.2em] text-muted-foreground uppercase">
-                Canvas
-              </p>
-              <h2 className="mt-1 text-sm font-medium">生成结果</h2>
-            </div>
-            {result && (
-              <Button type="button" variant="outline" size="sm" onClick={downloadImage}>
-                <ArrowDownToLineIcon />
-                下载 PNG
-              </Button>
-            )}
-          </div>
-
-          <div className="relative flex min-h-[28rem] flex-1 items-center justify-center overflow-hidden border bg-[linear-gradient(45deg,var(--color-muted)_25%,transparent_25%,transparent_75%,var(--color-muted)_75%),linear-gradient(45deg,var(--color-muted)_25%,transparent_25%,transparent_75%,var(--color-muted)_75%)] bg-[length:20px_20px] bg-[position:0_0,10px_10px]">
-            {isGenerating ? (
-              <div className="absolute inset-0 bg-background/95 p-5 sm:p-10">
-                <Skeleton className="h-full w-full" />
-                <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <div className="flex size-12 items-center justify-center border bg-background shadow-sm">
-                    <Loader2Icon className="size-5 animate-spin" />
-                  </div>
-                  <p className="mt-4 text-sm font-medium">正在构建画面</p>
-                  <p className="mt-1 text-xs text-muted-foreground">高质量图片通常需要一点时间</p>
-                </div>
-              </div>
-            ) : result ? (
-              <img
-                src={imageUrl}
-                alt={result.prompt}
-                className="max-h-[calc(100svh-12rem)] max-w-full object-contain"
-              />
-            ) : (
-              <div className="mx-auto max-w-xs px-6 text-center">
-                <div className="mx-auto flex size-14 items-center justify-center border bg-background/90 shadow-sm">
-                  <ImageIcon className="size-5 text-muted-foreground" />
-                </div>
-                <h3 className="mt-5 text-sm font-medium">画布等待你的想法</h3>
-                <p className="mt-2 text-xs/relaxed text-muted-foreground">
-                  在左侧输入描述并选择参数，生成的图片会展示在这里。
-                </p>
-              </div>
-            )}
-          </div>
-
-          {result && (
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border px-3 py-2 text-[10px] text-muted-foreground">
-              <span className="inline-flex items-center gap-1.5">
-                <ImageIcon className="size-3" />
-                {size}
-                {model === "sub2api" &&
-                  ` · ${qualityOptions.find((item) => item.value === quality)?.label}`}
+            <div className="ml-auto flex items-center gap-2">
+              <span className="hidden text-[10px] text-muted-foreground sm:inline">
+                ⌘ Enter
               </span>
-              <span>{result.model}</span>
+              <Button
+                type="submit"
+                size="lg"
+                className="rounded-lg px-4"
+                disabled={isGenerating || isGeneratingIdea || prompt.trim().length < 3}
+              >
+                {isGenerating ? (
+                  <>
+                    <Loader2Icon className="animate-spin" />
+                    绘制中
+                  </>
+                ) : (
+                  <>
+                    <SparklesIcon />
+                    生成图片
+                  </>
+                )}
+              </Button>
             </div>
-          )}
-        </section>
-      </div>
+          </div>
+        </form>
+      </section>
     </main>
   );
 }
