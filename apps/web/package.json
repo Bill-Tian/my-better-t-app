@@ -11,6 +11,7 @@
     "@ai-sdk/openai": "^4.0.17",
     "@ai-sdk/react": "^4.0.14",
     "@my-better-t-app/auth": "workspace:*",
+    "@my-better-t-app/db": "workspace:*",
     "@my-better-t-app/env": "workspace:*",
     "@my-better-t-app/ui": "workspace:*",
     "@tailwindcss/vite": "^4.3.2",

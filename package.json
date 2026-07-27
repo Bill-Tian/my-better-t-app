@@ -15,7 +15,9 @@
     "db:studio": "turbo run db:studio -F @my-better-t-app/db",
     "db:generate": "turbo run db:generate -F @my-better-t-app/db",
     "db:migrate": "turbo run db:migrate -F @my-better-t-app/db",
-    "deploy": "turbo run deploy -F @my-better-t-app/infra",
+    "deploy": "turbo run deploy:dev -F @my-better-t-app/infra",
+    "deploy:dev": "turbo run deploy:dev -F @my-better-t-app/infra",
+    "deploy:prod": "turbo run deploy:prod -F @my-better-t-app/infra",
     "destroy": "turbo run destroy -F @my-better-t-app/infra"
   },
   "dependencies": {

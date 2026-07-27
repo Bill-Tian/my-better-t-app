@@ -1,5 +1,7 @@
 import { createOpenAI } from "@ai-sdk/openai";
 import { createAuth } from "@my-better-t-app/auth";
+import { createDb } from "@my-better-t-app/db";
+import { imageAsset, imageGeneration } from "@my-better-t-app/db/schema/image";
 import { env } from "@my-better-t-app/env/server";
 import { createFileRoute } from "@tanstack/react-router";
 import { generateText, streamText } from "ai";
@@ -21,6 +23,11 @@ const ideaRequestSchema = z.object({
 });
 
 type ImageSize = z.infer<typeof requestSchema>["size"];
+type ImageGenerationInput = z.infer<typeof requestSchema>;
+type GeneratedImage = {
+  base64: string;
+  mediaType: string;
+};
 
 const qwenSizeByImageSize: Record<ImageSize, string> = {
   "1024x1024": "2048*2048",
@@ -84,6 +91,58 @@ const json = (body: unknown, status = 200) =>
     },
   });
 
+const saveGeneration = async ({
+  userId,
+  input,
+  model,
+  images,
+}: {
+  userId: string;
+  input: ImageGenerationInput;
+  model: string;
+  images: GeneratedImage[];
+}) => {
+  const db = createDb();
+  const id = crypto.randomUUID();
+  const createdAt = new Date();
+
+  await db.batch([
+    db.insert(imageGeneration).values({
+      id,
+      userId,
+      prompt: input.prompt,
+      model,
+      size: input.size,
+      quality: input.quality,
+      quantity: images.length,
+      background: input.background,
+      createdAt,
+    }),
+    db.insert(imageAsset).values(
+      images.map((image, position) => ({
+        id: crypto.randomUUID(),
+        generationId: id,
+        position,
+        mediaType: image.mediaType,
+        base64: image.base64,
+        createdAt,
+      })),
+    ),
+  ]);
+
+  return {
+    id,
+    prompt: input.prompt,
+    model,
+    size: input.size,
+    quality: input.quality,
+    quantity: images.length,
+    background: input.background,
+    createdAt: createdAt.toISOString(),
+    images,
+  };
+};
+
 const getDashScopeEndpoint = () => {
   const defaultBaseUrl = "https://dashscope.aliyuncs.com";
   const baseUrl = (env.DASHSCOPE_BASE_URL || defaultBaseUrl).replace(/\/+$/, "");
@@ -100,10 +159,7 @@ const getDashScopeEndpoint = () => {
 
 const getGrokApiBaseUrl = () => {
   const defaultBaseUrl = "https://api.x.ai/v1";
-  const baseUrl = (env.XAI_BASE_URL || env.SUB2API_BASE_URL || defaultBaseUrl).replace(
-    /\/+$/,
-    "",
-  );
+  const baseUrl = (env.GROK2API_BASE_URL || defaultBaseUrl).replace(/\/+$/, "");
 
   return baseUrl.endsWith("/images/generations")
     ? baseUrl.slice(0, -"/images/generations".length)
@@ -198,18 +254,18 @@ const generateWithQwen = async (prompt: string, size: ImageSize, quantity: numbe
 };
 
 const generateWithGrok = async (prompt: string, size: ImageSize, quantity: number) => {
-  if (!env.XAI_API_KEY) {
-    throw new Error("XAI_API_KEY_MISSING");
+  if (!env.GROK2API_IDEA_MODEL_API_KEY) {
+    throw new Error("GROK2API_IDEA_MODEL_API_KEY_MISSING");
   }
 
   const response = await fetch(getGrokImageEndpoint(), {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${env.XAI_API_KEY}`,
+      Authorization: `Bearer ${env.GROK2API_IDEA_MODEL_API_KEY}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: env.XAI_IMAGE_MODEL || "grok-imagine-image",
+      model: env.GROK2API_IMAGE_MODEL || "grok-imagine-image",
       prompt,
       response_format: "b64_json",
       n: quantity,
@@ -263,21 +319,20 @@ const generateWithGrok = async (prompt: string, size: ImageSize, quantity: numbe
 };
 
 const generateIdeaWithGrok = async () => {
-
   const sub2api = createOpenAI({
     name: "sub2api-idea",
-    apiKey: env.SUB2API_IDEA_MODEL_API_KEY,
-    baseURL: env.SUB2API_BASE_URL,
+    apiKey: env.GROK2API_IDEA_MODEL_API_KEY,
+    baseURL: env.GROK2API_BASE_URL,
   });
 
   const result = await generateText({
-    model: sub2api.responses(env.SUB2API_IDEA_MODEL || "grok-4.5"),
+    model: sub2api.responses(env.GROK2API_IDEA_MODEL || "grok-4.5"),
     system:
       "你是一位富有想象力的视觉创意总监。你的任务是创作适合文本生图模型的中文提示词。只输出最终提示词，不要标题、引号、解释或 Markdown。",
     prompt:
-      "随机构思一个新颖、具体、富有视觉冲击力的画面。用一段不超过160字的中文，包含主体、环境、构图、光线、色彩、镜头或媒介风格。每次选择不同的题材与美学方向。",
+      "随机想一个画面，用不超过40字的简单中文描述主体、场景和风格。只写一句话。",
     temperature: 1.15,
-    maxOutputTokens: 300,
+    maxOutputTokens: 100,
     maxRetries: 0,
     abortSignal: AbortSignal.timeout(60_000),
   });
@@ -293,12 +348,60 @@ const generateIdeaWithGrok = async () => {
     .replace(/^(?:画面描述|提示词|prompt)\s*[:：]\s*/i, "")
     .replace(/^["“]|["”]$/g, "")
     .trim()
-    .slice(0, 2000);
+    .slice(0, 40);
 };
 
 export const Route = createFileRoute("/api/image/$")({
   server: {
     handlers: {
+      GET: async ({ request }) => {
+        const session = await createAuth().api.getSession({
+          headers: request.headers,
+        });
+
+        if (!session) {
+          return json({ error: "请先登录后再查看图片库。" }, 401);
+        }
+
+        const url = new URL(request.url);
+        const offset = Math.max(
+          0,
+          Number.parseInt(url.searchParams.get("offset") || "0", 10) || 0,
+        );
+        const pageSize = 10;
+        const db = createDb();
+        const generations = await db.query.imageGeneration.findMany({
+          where: (generation, { eq }) => eq(generation.userId, session.user.id),
+          orderBy: (generation, { desc }) => [desc(generation.createdAt)],
+          limit: pageSize + 1,
+          offset,
+          with: {
+            images: {
+              orderBy: (asset, { asc }) => [asc(asset.position)],
+            },
+          },
+        });
+        const hasMore = generations.length > pageSize;
+
+        return json({
+          items: generations.slice(0, pageSize).map((generation) => ({
+            id: generation.id,
+            prompt: generation.prompt,
+            model: generation.model,
+            size: generation.size,
+            quality: generation.quality,
+            quantity: generation.quantity,
+            background: generation.background,
+            createdAt: generation.createdAt.toISOString(),
+            images: generation.images.map((image) => ({
+              base64: image.base64,
+              mediaType: image.mediaType,
+            })),
+          })),
+          hasMore,
+          nextOffset: hasMore ? offset + pageSize : null,
+        });
+      },
       POST: async ({ request }) => {
         const session = await createAuth().api.getSession({
           headers: request.headers,
@@ -316,7 +419,7 @@ export const Route = createFileRoute("/api/image/$")({
 
             return json({
               prompt,
-              model: env.SUB2API_IDEA_MODEL || "grok-4.5",
+              model: env.GROK2API_IDEA_MODEL || "grok-4.5",
             });
           } catch (error) {
             console.error("Idea generation error:", error);
@@ -356,23 +459,31 @@ export const Route = createFileRoute("/api/image/$")({
         try {
           if (model === "qwen-image-2.0-pro") {
             const images = await generateWithQwen(prompt, size, quantity);
+            const generation = await saveGeneration({
+              userId: session.user.id,
+              input: body.data,
+              model,
+              images,
+            });
 
             return json({
-              images,
-              image: images[0],
-              prompt,
-              model,
+              ...generation,
+              image: generation.images[0],
             });
           }
 
           if (model === "grok-imagine-image") {
             const images = await generateWithGrok(prompt, size, quantity);
+            const generation = await saveGeneration({
+              userId: session.user.id,
+              input: body.data,
+              model: env.GROK2API_IMAGE_MODEL || "grok-imagine-image",
+              images,
+            });
 
             return json({
-              images,
-              image: images[0],
-              prompt,
-              model: env.XAI_IMAGE_MODEL || "grok-imagine-image",
+              ...generation,
+              image: generation.images[0],
             });
           }
 
@@ -433,12 +544,16 @@ export const Route = createFileRoute("/api/image/$")({
           const images = await Promise.all(
             Array.from({ length: quantity }, () => generateOneImage()),
           );
+          const generation = await saveGeneration({
+            userId: session.user.id,
+            input: body.data,
+            model: env.SUB2API_IMAGE_MODEL,
+            images,
+          });
 
           return json({
-            images,
-            image: images[0],
-            prompt,
-            model: env.SUB2API_IMAGE_MODEL,
+            ...generation,
+            image: generation.images[0],
           });
         } catch (error) {
           console.error("Image generation error:", error);
@@ -462,7 +577,7 @@ export const Route = createFileRoute("/api/image/$")({
               message.includes("Unauthorized") ||
               message.includes("401"))
           ) {
-            errorMessage = "xAI API Key 无效，请检查 XAI_API_KEY 配置。";
+            errorMessage = "Grok API Key 无效，请检查 GROK2API_IDEA_MODEL_API_KEY 配置。";
           } else if (
             isQwen &&
             (message.includes("InvalidApiKey") ||

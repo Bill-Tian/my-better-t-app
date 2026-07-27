@@ -1,6 +1,5 @@
 import { Toaster } from "@my-better-t-app/ui/components/sonner";
 import { HeadContent, Outlet, Scripts, createRootRouteWithContext } from "@tanstack/react-router";
-import { TanStackRouterDevtools } from "@tanstack/react-router-devtools";
 
 import Header from "../components/header";
 
@@ -19,7 +18,11 @@ export const Route = createRootRouteWithContext<RouterAppContext>()({
         content: "width=device-width, initial-scale=1",
       },
       {
-        title: "My App",
+        title: "Lumen AI Studio · 多模态创作空间",
+      },
+      {
+        name: "description",
+        content: "集 AI 图像、智能对话与声音设计于一体的多模态创作空间。",
       },
     ],
     links: [
@@ -35,17 +38,16 @@ export const Route = createRootRouteWithContext<RouterAppContext>()({
 
 function RootDocument() {
   return (
-    <html lang="en" className="dark">
+    <html lang="zh-CN" className="dark">
       <head>
         <HeadContent />
       </head>
-      <body>
+      <body className="overflow-hidden">
         <div className="grid h-svh grid-rows-[auto_1fr]">
           <Header />
           <Outlet />
         </div>
         <Toaster richColors />
-        <TanStackRouterDevtools position="bottom-left" />
         <Scripts />
       </body>
     </html>

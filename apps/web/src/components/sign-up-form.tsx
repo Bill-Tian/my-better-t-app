@@ -56,8 +56,12 @@ export default function SignUpForm({ onSwitchToSignIn }: { onSwitchToSignIn: () 
   }
 
   return (
-    <div className="mx-auto w-full mt-10 max-w-md p-6">
-      <h1 className="mb-6 text-center text-3xl font-bold">Create Account</h1>
+    <div className="mx-auto w-full max-w-md rounded-3xl border border-white/9 bg-card/65 p-6 shadow-[0_28px_90px_-38px_rgba(0,0,0,0.9)] backdrop-blur-xl sm:p-8">
+      <p className="text-[10px] font-medium tracking-[0.18em] text-primary uppercase">
+        Join the studio
+      </p>
+      <h1 className="mt-2 text-2xl font-semibold tracking-tight">创建创作者账号</h1>
+      <p className="mt-2 text-xs text-muted-foreground">保存作品，并在不同工具间延续灵感。</p>
 
       <form
         onSubmit={(e) => {
@@ -65,19 +69,21 @@ export default function SignUpForm({ onSwitchToSignIn }: { onSwitchToSignIn: () 
           e.stopPropagation();
           form.handleSubmit();
         }}
-        className="space-y-4"
+        className="mt-7 space-y-4"
       >
         <div>
           <form.Field name="name">
             {(field) => (
               <div className="space-y-2">
-                <Label htmlFor={field.name}>Name</Label>
+                <Label htmlFor={field.name}>名称</Label>
                 <Input
                   id={field.name}
                   name={field.name}
                   value={field.state.value}
                   onBlur={field.handleBlur}
                   onChange={(e) => field.handleChange(e.target.value)}
+                  placeholder="你的创作者名称"
+                  className="h-10 bg-white/[0.025]"
                 />
                 {field.state.meta.errors.map((error) => (
                   <p key={error?.message} className="text-red-500">
@@ -93,7 +99,7 @@ export default function SignUpForm({ onSwitchToSignIn }: { onSwitchToSignIn: () 
           <form.Field name="email">
             {(field) => (
               <div className="space-y-2">
-                <Label htmlFor={field.name}>Email</Label>
+                <Label htmlFor={field.name}>邮箱</Label>
                 <Input
                   id={field.name}
                   name={field.name}
@@ -101,6 +107,8 @@ export default function SignUpForm({ onSwitchToSignIn }: { onSwitchToSignIn: () 
                   value={field.state.value}
                   onBlur={field.handleBlur}
                   onChange={(e) => field.handleChange(e.target.value)}
+                  placeholder="name@example.com"
+                  className="h-10 bg-white/[0.025]"
                 />
                 {field.state.meta.errors.map((error) => (
                   <p key={error?.message} className="text-red-500">
@@ -116,7 +124,7 @@ export default function SignUpForm({ onSwitchToSignIn }: { onSwitchToSignIn: () 
           <form.Field name="password">
             {(field) => (
               <div className="space-y-2">
-                <Label htmlFor={field.name}>Password</Label>
+                <Label htmlFor={field.name}>密码</Label>
                 <Input
                   id={field.name}
                   name={field.name}
@@ -124,6 +132,8 @@ export default function SignUpForm({ onSwitchToSignIn }: { onSwitchToSignIn: () 
                   value={field.state.value}
                   onBlur={field.handleBlur}
                   onChange={(e) => field.handleChange(e.target.value)}
+                  placeholder="至少 8 位"
+                  className="h-10 bg-white/[0.025]"
                 />
                 {field.state.meta.errors.map((error) => (
                   <p key={error?.message} className="text-red-500">
@@ -139,20 +149,20 @@ export default function SignUpForm({ onSwitchToSignIn }: { onSwitchToSignIn: () 
           selector={(state) => ({ canSubmit: state.canSubmit, isSubmitting: state.isSubmitting })}
         >
           {({ canSubmit, isSubmitting }) => (
-            <Button type="submit" className="w-full" disabled={!canSubmit || isSubmitting}>
-              {isSubmitting ? "Submitting..." : "Sign Up"}
+            <Button type="submit" className="h-10 w-full" disabled={!canSubmit || isSubmitting}>
+              {isSubmitting ? "正在创建…" : "创建账号"}
             </Button>
           )}
         </form.Subscribe>
       </form>
 
-      <div className="mt-4 text-center">
+      <div className="mt-5 text-center">
         <Button
           variant="link"
           onClick={onSwitchToSignIn}
-          className="text-indigo-600 hover:text-indigo-800"
+          className="text-primary hover:text-primary/80"
         >
-          Already have an account? Sign In
+          已有账号？返回登录
         </Button>
       </div>
     </div>

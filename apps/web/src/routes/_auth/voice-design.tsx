@@ -223,11 +223,11 @@ function VoiceDesignStudio() {
     (!isQwen || billingAccepted);
 
   return (
-    <main className="min-h-0 overflow-y-auto bg-[radial-gradient(circle_at_top_left,var(--color-primary)/0.08,transparent_30rem)]">
+    <main className="app-scrollbar min-h-0 overflow-y-auto bg-[radial-gradient(circle_at_top_left,var(--color-primary)/0.09,transparent_30rem)]">
       <div className="mx-auto grid min-h-full w-full max-w-7xl grid-cols-1 lg:grid-cols-[25rem_minmax(0,1fr)]">
-        <section className="border-b bg-background/88 p-5 backdrop-blur lg:border-r lg:border-b-0 lg:p-7">
+        <section className="border-b border-white/8 bg-background/72 p-5 backdrop-blur-xl lg:border-r lg:border-b-0 lg:p-7">
           <div className="mb-7">
-            <div className="mb-3 flex size-9 items-center justify-center border bg-primary text-primary-foreground">
+            <div className="mb-3 flex size-9 items-center justify-center rounded-xl border border-primary/20 bg-primary text-primary-foreground shadow-[0_10px_30px_-14px_var(--color-primary)]">
               <Mic2Icon className="size-4" />
             </div>
             <p className="mb-1 text-[10px] font-medium tracking-[0.22em] text-muted-foreground uppercase">
@@ -423,7 +423,7 @@ function VoiceDesignStudio() {
             )}
           </div>
 
-          <div className="relative flex min-h-[31rem] flex-1 flex-col overflow-hidden border bg-background/55">
+          <div className="relative flex min-h-[31rem] flex-1 flex-col overflow-hidden rounded-3xl border border-white/9 bg-background/48 shadow-[0_28px_90px_-48px_rgba(0,0,0,0.9)]">
             <div className="flex h-44 items-center justify-center border-b bg-[radial-gradient(circle_at_center,var(--color-primary)/0.12,transparent_65%)] px-6">
               <div className="flex h-24 items-center gap-1">
                 {waveformBars.map((height, index) => (
@@ -533,7 +533,7 @@ function VoiceDesignStudio() {
               </div>
             ) : (
               <div className="flex flex-1 flex-col items-center justify-center p-7 text-center">
-                <div className="flex size-14 items-center justify-center border bg-background shadow-sm">
+                <div className="flex size-14 items-center justify-center rounded-2xl border bg-background shadow-sm">
                   <AudioLinesIcon className="size-5 text-muted-foreground" />
                 </div>
                 <h3 className="mt-5 text-sm font-medium">等待你的声音设定</h3>
@@ -557,7 +557,7 @@ function VoiceDesignStudio() {
             )}
           </div>
 
-          <div className="mt-3 flex items-center justify-between gap-3 border px-3 py-2 text-[10px] text-muted-foreground">
+          <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-white/8 bg-white/[0.02] px-3 py-2 text-[10px] text-muted-foreground">
             <span className="inline-flex items-center gap-1.5">
               <SparklesIcon className="size-3" />
               文本驱动 · 无需音频样本

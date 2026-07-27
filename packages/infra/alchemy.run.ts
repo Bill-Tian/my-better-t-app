@@ -2,10 +2,11 @@ import alchemy from "alchemy";
 import { TanStackStart } from "alchemy/cloudflare";
 import { config } from "dotenv";
 
-config({ path: "./.env" });
-config({ path: "../../apps/web/.env" });
-
 const app = await alchemy("my-better-t-app");
+const stage = app.stage ?? "dev";
+
+config({ path: "./.env" });
+config({ path: `../../apps/web/.env.${stage}` });
 
 export const web = await TanStackStart("web", {
   cwd: "../../apps/web",
@@ -19,12 +20,11 @@ export const web = await TanStackStart("web", {
     SUB2API_MODEL: alchemy.env.SUB2API_MODEL!,
     SUB2API_IMAGE_MODEL: alchemy.env.SUB2API_IMAGE_MODEL!,
     DASHSCOPE_API_KEY: alchemy.secret.env.DASHSCOPE_API_KEY!,
-    SUB2API_IDEA_MODEL_API_KEY: alchemy.secret.env.SUB2API_IDEA_MODEL_API_KEY!,
     DASHSCOPE_BASE_URL: alchemy.env.DASHSCOPE_BASE_URL!,
-    XAI_API_KEY: alchemy.secret.env.XAI_API_KEY!,
-    XAI_BASE_URL: alchemy.env.XAI_BASE_URL || alchemy.env.SUB2API_BASE_URL!,
-    XAI_IMAGE_MODEL: alchemy.env.XAI_IMAGE_MODEL || "grok-imagine-image",
-    SUB2API_IDEA_MODEL: alchemy.env.SUB2API_IDEA_MODEL || "grok-4.5",
+    GROK2API_IDEA_MODEL_API_KEY: alchemy.env.GROK2API_IDEA_MODEL_API_KEY!,
+    GROK2API_BASE_URL: alchemy.env.GROK2API_BASE_URL!,
+    GROK2API_IDEA_MODEL: alchemy.env.GROK2API_IDEA_MODEL!,
+    GROK2API_IMAGE_MODEL: alchemy.env.GROK2API_IMAGE_MODEL!,
     GOOGLE_CLIENT_ID: alchemy.secret.env.GOOGLE_CLIENT_ID!,
     GOOGLE_CLIENT_SECRET: alchemy.secret.env.GOOGLE_CLIENT_SECRET!,
   },
