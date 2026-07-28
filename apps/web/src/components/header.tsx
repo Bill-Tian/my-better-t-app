@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import {
   AudioWaveformIcon,
+  FilmIcon,
   ImageIcon,
   LayoutGridIcon,
   MessageSquareTextIcon,
@@ -12,6 +13,7 @@ import UserMenu from "./user-menu";
 const links = [
   { to: "/dashboard", label: "工作台", icon: LayoutGridIcon },
   { to: "/image", label: "AI 图像", icon: ImageIcon },
+  { to: "/video", label: "AI 视频", icon: FilmIcon },
   { to: "/ai", label: "AI 对话", icon: MessageSquareTextIcon },
   { to: "/voice-design", label: "声音设计", icon: AudioWaveformIcon },
 ] as const;

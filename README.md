@@ -73,6 +73,18 @@ GEMINI_IMAGE_MODEL=gemini-3.1-flash-image
 OpenAI-compatible `message.images` response. The selected aspect ratio is included in the
 prompt; multiple images are generated as separate requests and saved to the existing history.
 
+## Grok Video
+
+The authenticated `/video` route supports text-to-video and image-to-video through
+`grok-imagine-video`. It reuses `GROK2API_IDEA_MODEL_API_KEY` and `GROK2API_BASE_URL`, creates
+asynchronous video jobs, and refreshes their progress from the xAI-compatible video API.
+
+Run the database migration before opening the video studio:
+
+```bash
+pnpm run db:migrate
+```
+
 ## Voice Design
 
 The authenticated `/voice-design` route creates custom Qwen-TTS or CosyVoice voices from a

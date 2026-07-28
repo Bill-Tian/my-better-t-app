@@ -3,6 +3,7 @@ import {
   ArrowRightIcon,
   AudioWaveformIcon,
   BotIcon,
+  FilmIcon,
   ImageIcon,
   Layers3Icon,
   MessageSquareTextIcon,
@@ -24,6 +25,15 @@ const tools = [
     icon: ImageIcon,
     accent: "from-blue-500/22 via-indigo-500/10 to-transparent",
     meta: "Qwen · Grok · GPT Image",
+  },
+  {
+    to: "/video",
+    eyebrow: "VIDEO STUDIO",
+    title: "AI 视频创作",
+    description: "从文字或一张首帧图片开始，生成适合横屏与竖屏场景的动态视频。",
+    icon: FilmIcon,
+    accent: "from-fuchsia-500/22 via-violet-500/10 to-transparent",
+    meta: "Text to Video · Image to Video",
   },
   {
     to: "/ai",
@@ -71,7 +81,7 @@ function HomeComponent() {
               </span>
             </h1>
             <p className="mt-7 max-w-xl text-base/relaxed text-muted-foreground sm:text-lg/relaxed">
-              Lumen AI 将图像生成、智能对话与声音设计汇聚在同一个创作空间。
+              Lumen AI 将图像与视频生成、智能对话和声音设计汇聚在同一个创作空间。
               从一个念头开始，更快抵达可以分享的作品。
             </p>
             <div className="mt-9 flex flex-wrap items-center gap-3">
@@ -94,7 +104,7 @@ function HomeComponent() {
             <div className="mt-10 flex flex-wrap gap-x-7 gap-y-3 text-[11px] text-muted-foreground">
               <span className="inline-flex items-center gap-2">
                 <span className="size-1.5 rounded-full bg-emerald-400 shadow-[0_0_10px_#34d399]" />
-                三类创作工具
+                四类创作工具
               </span>
               <span className="inline-flex items-center gap-2">
                 <Layers3Icon className="size-3.5 text-primary" />
@@ -180,12 +190,12 @@ function HomeComponent() {
       </div>
 
       <section className="border-y border-white/7 bg-white/[0.018]">
-        <div className="mx-auto grid w-full max-w-7xl gap-px px-5 py-16 sm:grid-cols-3 lg:px-8 lg:py-20">
+        <div className="mx-auto grid w-full max-w-7xl gap-4 px-5 py-16 md:grid-cols-2 lg:px-8 lg:py-20 xl:grid-cols-4">
           {tools.map(({ to, eyebrow, title, description, icon: Icon, accent, meta }) => (
             <Link
               key={to}
               to={to}
-              className="group relative overflow-hidden border border-white/8 bg-card/35 p-6 transition first:rounded-t-2xl last:rounded-b-2xl hover:-translate-y-1 hover:border-primary/25 hover:bg-card/65 sm:first:rounded-l-2xl sm:first:rounded-tr-none sm:last:rounded-r-2xl sm:last:rounded-bl-none lg:p-8"
+              className="group relative overflow-hidden rounded-2xl border border-white/8 bg-card/35 p-6 transition hover:-translate-y-1 hover:border-primary/25 hover:bg-card/65 lg:p-8"
             >
               <div className={`absolute inset-0 bg-gradient-to-br ${accent} opacity-70 transition group-hover:opacity-100`} />
               <div className="relative">

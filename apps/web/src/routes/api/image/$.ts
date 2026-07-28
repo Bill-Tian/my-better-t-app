@@ -7,6 +7,11 @@ import { createFileRoute } from "@tanstack/react-router";
 import { generateText, streamText } from "ai";
 import { z } from "zod";
 
+const referenceImageSchema = z.object({
+  base64: z.string().min(1).max(14_000_000),
+  mediaType: z.enum(["image/jpeg", "image/png", "image/webp"]),
+});
+
 const requestSchema = z.object({
   prompt: z.string().trim().min(3).max(2000),
   model: z
@@ -16,6 +21,9 @@ const requestSchema = z.object({
   quality: z.enum(["low", "medium", "high"]),
   quantity: z.number().int().min(1).max(4).default(1),
   background: z.enum(["auto", "opaque", "transparent"]),
+  referenceImages: z.array(referenceImageSchema).max(3).optional(),
+  // Keep accepting the original single-image payload during rolling deploys.
+  referenceImage: referenceImageSchema.optional(),
 });
 
 const ideaRequestSchema = z.object({
@@ -24,6 +32,7 @@ const ideaRequestSchema = z.object({
 
 type ImageSize = z.infer<typeof requestSchema>["size"];
 type ImageGenerationInput = z.infer<typeof requestSchema>;
+type ReferenceImage = z.infer<typeof referenceImageSchema>;
 type GeneratedImage = {
   base64: string;
   mediaType: string;
@@ -199,6 +208,7 @@ const getGrokApiBaseUrl = () => {
 };
 
 const getGrokImageEndpoint = () => `${getGrokApiBaseUrl()}/images/generations`;
+const getGrokImageEditEndpoint = () => `${getGrokApiBaseUrl()}/images/edits`;
 
 const getGeminiImageEndpoint = () => {
   const baseUrl = env.GEMINI_BASE_URL.replace(/\/+$/, "");
@@ -218,6 +228,9 @@ const arrayBufferToBase64 = (buffer: ArrayBuffer) => {
 
   return btoa(binary);
 };
+
+const referenceImageToDataUrl = (image: ReferenceImage) =>
+  `data:${image.mediaType};base64,${image.base64}`;
 
 const readGeminiJsonResponse = async (response: Response) => {
   const text = await response.text();
@@ -263,7 +276,12 @@ const imageReferenceToGeneratedImage = async (
   };
 };
 
-const generateWithQwen = async (prompt: string, size: ImageSize, quantity: number) => {
+const generateWithQwen = async (
+  prompt: string,
+  size: ImageSize,
+  quantity: number,
+  referenceImages: ReferenceImage[],
+) => {
   if (!env.DASHSCOPE_API_KEY) {
     throw new Error("DASHSCOPE_API_KEY_MISSING");
   }
@@ -280,7 +298,14 @@ const generateWithQwen = async (prompt: string, size: ImageSize, quantity: numbe
         messages: [
           {
             role: "user",
-            content: [{ text: prompt }],
+            content: referenceImages.length
+              ? [
+                  ...referenceImages.map((image) => ({
+                    image: referenceImageToDataUrl(image),
+                  })),
+                  { text: prompt },
+                ]
+              : [{ text: prompt }],
           },
         ],
       },
@@ -336,27 +361,50 @@ const generateWithQwen = async (prompt: string, size: ImageSize, quantity: numbe
   );
 };
 
-const generateWithGrok = async (prompt: string, size: ImageSize, quantity: number) => {
+const generateWithGrok = async (
+  prompt: string,
+  size: ImageSize,
+  quantity: number,
+  referenceImages: ReferenceImage[],
+) => {
   if (!env.GROK2API_IDEA_MODEL_API_KEY) {
     throw new Error("GROK2API_IDEA_MODEL_API_KEY_MISSING");
   }
 
-  const response = await fetch(getGrokImageEndpoint(), {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${env.GROK2API_IDEA_MODEL_API_KEY}`,
-      "Content-Type": "application/json",
+  const response = await fetch(
+    referenceImages.length ? getGrokImageEditEndpoint() : getGrokImageEndpoint(),
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.GROK2API_IDEA_MODEL_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: env.GROK2API_IMAGE_MODEL || "grok-imagine-image",
+        prompt,
+        ...(referenceImages.length === 1
+          ? {
+              image: {
+                url: referenceImageToDataUrl(referenceImages[0]!),
+                type: "image_url",
+              },
+            }
+          : referenceImages.length > 1
+            ? {
+                images: referenceImages.map((image) => ({
+                  url: referenceImageToDataUrl(image),
+                  type: "image_url",
+                })),
+              }
+            : {}),
+        response_format: "b64_json",
+        n: quantity,
+        aspect_ratio: aspectRatioByImageSize[size],
+        resolution: "1k",
+      }),
+      signal: AbortSignal.timeout(180_000),
     },
-    body: JSON.stringify({
-      model: env.GROK2API_IMAGE_MODEL || "grok-imagine-image",
-      prompt,
-      response_format: "b64_json",
-      n: quantity,
-      aspect_ratio: aspectRatioByImageSize[size],
-      resolution: "1k",
-    }),
-    signal: AbortSignal.timeout(180_000),
-  });
+  );
 
   const payload: unknown = await response.json();
 
@@ -405,6 +453,7 @@ const generateWithGemini = async (
   prompt: string,
   size: ImageSize,
   quantity: number,
+  referenceImages: ReferenceImage[],
 ) => {
   if (!env.GEMINI_API_KEY) {
     throw new Error("GEMINI_API_KEY_MISSING");
@@ -429,8 +478,16 @@ const generateWithGemini = async (
             content: [
               {
                 type: "text",
-                text: `${prompt}\n\n生成一张 ${aspectRatioByImageSize[size]} 比例的图片。`,
+                text: referenceImages.length
+                  ? `${prompt}\n\n请基于提供的参考图片进行修改或重绘，输出一张 ${aspectRatioByImageSize[size]} 比例的图片。`
+                  : `${prompt}\n\n生成一张 ${aspectRatioByImageSize[size]} 比例的图片。`,
               },
+              ...referenceImages.map((image) => ({
+                type: "image_url",
+                image_url: {
+                  url: referenceImageToDataUrl(image),
+                },
+              })),
             ],
           },
         ],
@@ -609,10 +666,18 @@ export const Route = createFileRoute("/api/image/$")({
         }
 
         const { prompt, model, size, quality, quantity, background } = body.data;
+        const referenceImages =
+          body.data.referenceImages ??
+          (body.data.referenceImage ? [body.data.referenceImage] : []);
 
         try {
           if (model === "qwen-image-2.0-pro") {
-            const images = await generateWithQwen(prompt, size, quantity);
+            const images = await generateWithQwen(
+              prompt,
+              size,
+              quantity,
+              referenceImages,
+            );
             const generation = await saveGeneration({
               userId: session.user.id,
               input: body.data,
@@ -627,7 +692,12 @@ export const Route = createFileRoute("/api/image/$")({
           }
 
           if (model === "grok-imagine-image") {
-            const images = await generateWithGrok(prompt, size, quantity);
+            const images = await generateWithGrok(
+              prompt,
+              size,
+              quantity,
+              referenceImages,
+            );
             const generation = await saveGeneration({
               userId: session.user.id,
               input: body.data,
@@ -642,7 +712,12 @@ export const Route = createFileRoute("/api/image/$")({
           }
 
           if (model === "gemini-image") {
-            const images = await generateWithGemini(prompt, size, quantity);
+            const images = await generateWithGemini(
+              prompt,
+              size,
+              quantity,
+              referenceImages,
+            );
             const generation = await saveGeneration({
               userId: session.user.id,
               input: body.data,
@@ -667,6 +742,7 @@ export const Route = createFileRoute("/api/image/$")({
               size,
               quality,
               background,
+              inputFidelity: referenceImages.length ? "high" : undefined,
               outputFormat: "png",
               partialImages: 1,
             });
@@ -676,7 +752,27 @@ export const Route = createFileRoute("/api/image/$")({
             // keeps the upstream connection active while the image is rendered.
             const result = streamText({
               model: sub2api.responses(env.SUB2API_MODEL),
-              prompt: `Create exactly one image that follows this description:\n\n${prompt}`,
+              ...(referenceImages.length
+                ? {
+                    messages: [
+                      {
+                        role: "user" as const,
+                        content: [
+                          {
+                            type: "text" as const,
+                            text: `Edit the provided reference images according to this instruction. Create exactly one image:\n\n${prompt}`,
+                          },
+                          ...referenceImages.map((image) => ({
+                            type: "image" as const,
+                            image: referenceImageToDataUrl(image),
+                          })),
+                        ],
+                      },
+                    ],
+                  }
+                : {
+                    prompt: `Create exactly one image that follows this description:\n\n${prompt}`,
+                  }),
               tools: { image_generation: imageGeneration },
               toolChoice: { type: "tool", toolName: "image_generation" },
               maxRetries: 0,

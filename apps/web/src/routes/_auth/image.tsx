@@ -1,4 +1,11 @@
 import { Button } from "@my-better-t-app/ui/components/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@my-better-t-app/ui/components/dropdown-menu";
 import { Skeleton } from "@my-better-t-app/ui/components/skeleton";
 import { Textarea } from "@my-better-t-app/ui/components/textarea";
 import { createFileRoute } from "@tanstack/react-router";
@@ -10,6 +17,7 @@ import {
   ChevronRightIcon,
   DicesIcon,
   ImageIcon,
+  ImagePlusIcon,
   ImagesIcon,
   Layers3Icon,
   Loader2Icon,
@@ -23,8 +31,10 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type FormEvent,
+  type ReactNode,
 } from "react";
 import { toast } from "sonner";
 
@@ -44,6 +54,11 @@ type ImageQuantity = 1 | 2 | 3 | 4;
 type GeneratedAsset = {
   base64: string;
   mediaType: string;
+};
+
+type ReferenceImage = {
+  base64: string;
+  mediaType: "image/jpeg" | "image/png" | "image/webp";
 };
 
 type ImageGeneration = {
@@ -90,6 +105,43 @@ const modelOptions: Array<{ value: ImageModel; label: string }> = [
 ];
 
 const quantityOptions: ImageQuantity[] = [1, 2, 3, 4];
+const maxReferenceImages = 3;
+const referenceImageMediaTypes = new Set<ReferenceImage["mediaType"]>([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+]);
+const maxReferenceImageBytes = 10 * 1024 * 1024;
+
+const fileToReferenceImage = async (file: File): Promise<ReferenceImage> => {
+  if (!referenceImageMediaTypes.has(file.type as ReferenceImage["mediaType"])) {
+    throw new Error("仅支持 JPG、PNG 或 WebP 图片");
+  }
+
+  if (file.size > maxReferenceImageBytes) {
+    throw new Error("参考图片不能超过 10 MB");
+  }
+
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () =>
+      typeof reader.result === "string"
+        ? resolve(reader.result)
+        : reject(new Error("图片读取失败"));
+    reader.onerror = () => reject(new Error("图片读取失败"));
+    reader.readAsDataURL(file);
+  });
+  const commaIndex = dataUrl.indexOf(",");
+
+  if (commaIndex < 0) {
+    throw new Error("图片读取失败");
+  }
+
+  return {
+    base64: dataUrl.slice(commaIndex + 1),
+    mediaType: file.type as ReferenceImage["mediaType"],
+  };
+};
 
 const modelLabel = (model: string) =>
   modelOptions.find((option) => option.value === model)?.label ?? model;
@@ -122,12 +174,90 @@ const downloadGeneratedImage = (
   anchor.click();
 };
 
+function StudioSelect<T extends string>({
+  value,
+  onValueChange,
+  options,
+  label,
+  triggerLabel,
+  icon,
+  disabled = false,
+  contentClassName = "",
+}: {
+  value: T;
+  onValueChange: (value: T) => void;
+  options: Array<{
+    value: T;
+    label: string;
+    description?: string;
+  }>;
+  label: string;
+  triggerLabel: string;
+  icon?: ReactNode;
+  disabled?: boolean;
+  contentClassName?: string;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            aria-label={label}
+            disabled={disabled}
+            className="group/select rounded-lg border border-transparent bg-background/45 px-2.5 text-foreground shadow-sm hover:border-border hover:bg-background aria-expanded:border-primary/30 aria-expanded:bg-background"
+          />
+        }
+      >
+        {icon && (
+          <span className="text-muted-foreground [&_svg]:size-3.5">{icon}</span>
+        )}
+        <span className="max-w-36 truncate">{triggerLabel}</span>
+        <ChevronDownIcon className="size-3 text-muted-foreground transition-transform duration-150 group-data-popup-open/select:rotate-180" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="start"
+        sideOffset={8}
+        className={`w-auto min-w-44 rounded-xl border border-border/70 bg-popover/95 p-1.5 shadow-xl backdrop-blur-xl ${contentClassName}`}
+      >
+        <div className="px-2.5 py-1.5 text-[10px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">
+          {label}
+        </div>
+        <DropdownMenuRadioGroup
+          value={value}
+          onValueChange={(nextValue) => onValueChange(nextValue as T)}
+        >
+          {options.map((option) => (
+            <DropdownMenuRadioItem
+              key={option.value}
+              value={option.value}
+              className="my-0.5 min-h-9 rounded-lg px-2.5 py-2 pr-9 transition-colors focus:bg-primary/10 focus:text-primary data-checked:bg-primary/10 data-checked:text-primary"
+            >
+              <span className="flex min-w-0 flex-1 items-center justify-between gap-4">
+                <span className="truncate font-medium">{option.label}</span>
+                {option.description && (
+                  <span className="shrink-0 text-[10px] text-muted-foreground">
+                    {option.description}
+                  </span>
+                )}
+              </span>
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 function ImageStudio() {
   const [prompt, setPrompt] = useState("");
   const [model, setModel] = useState<ImageModel>("grok-imagine-image");
   const [size, setSize] = useState<ImageSize>("1024x1024");
   const [quality, setQuality] = useState<ImageQuality>("medium");
   const [quantity, setQuantity] = useState<ImageQuantity>(1);
+  const [referenceImages, setReferenceImages] = useState<ReferenceImage[]>([]);
   const [generations, setGenerations] = useState<ImageGeneration[]>([]);
   const [nextOffset, setNextOffset] = useState<number | null>(null);
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
@@ -136,8 +266,37 @@ function ImageStudio() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isGeneratingIdea, setIsGeneratingIdea] = useState(false);
   const [preview, setPreview] = useState<PreviewSelection | null>(null);
+  const referenceImageInputRef = useRef<HTMLInputElement>(null);
   const selectedSize = sizeOptions.find((option) => option.value === size);
   const selectedModel = modelOptions.find((option) => option.value === model);
+
+  const selectReferenceImages = async (files: FileList | null) => {
+    const selectedFiles = Array.from(files ?? []);
+    if (selectedFiles.length === 0) return;
+
+    const availableSlots = maxReferenceImages - referenceImages.length;
+    if (availableSlots <= 0) {
+      toast.error(`最多添加 ${maxReferenceImages} 张参考图片`);
+      return;
+    }
+
+    if (selectedFiles.length > availableSlots) {
+      toast.info(`最多添加 ${maxReferenceImages} 张参考图片`);
+    }
+
+    try {
+      const images = await Promise.all(
+        selectedFiles.slice(0, availableSlots).map(fileToReferenceImage),
+      );
+      setReferenceImages((current) => [...current, ...images]);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "参考图片读取失败");
+    } finally {
+      if (referenceImageInputRef.current) {
+        referenceImageInputRef.current.value = "";
+      }
+    }
+  };
 
   const fetchHistory = useCallback(async (offset: number, replace: boolean) => {
     if (replace) {
@@ -221,6 +380,10 @@ function ImageStudio() {
           quality,
           quantity,
           background: "auto",
+          referenceImages: referenceImages.map(({ base64, mediaType }) => ({
+            base64,
+            mediaType,
+          })),
         }),
       });
       const data = (await response.json()) as ImageGeneration | { error?: string };
@@ -234,8 +397,15 @@ function ImageStudio() {
         ...current.filter((item) => item.id !== data.id),
       ]);
       setPrompt("");
+      setReferenceImages([]);
       toast.success(
-        data.images.length > 1 ? `已生成并收藏 ${data.images.length} 张图片` : "图片已生成并收藏",
+        referenceImages.length > 0
+          ? data.images.length > 1
+            ? `已根据参考图生成并收藏 ${data.images.length} 张图片`
+            : "已根据参考图生成并收藏图片"
+          : data.images.length > 1
+            ? `已生成并收藏 ${data.images.length} 张图片`
+            : "图片已生成并收藏",
       );
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "图片生成失败，请稍后重试");
@@ -295,7 +465,56 @@ function ImageStudio() {
           onSubmit={handleSubmit}
           className="sticky top-0 z-20 rounded-2xl border border-border/80 bg-background/90 p-2 shadow-[0_18px_60px_-32px_rgba(0,0,0,0.6)] backdrop-blur-2xl"
         >
+          <input
+            ref={referenceImageInputRef}
+            type="file"
+            multiple
+            accept="image/jpeg,image/png,image/webp"
+            className="sr-only"
+            aria-label="选择参考图片"
+            onChange={(event) => void selectReferenceImages(event.target.files)}
+          />
+
           <div className="flex items-start gap-2 px-2 pt-2">
+            <div className="flex shrink-0 gap-1.5">
+              {referenceImages.map((referenceImage, index) => (
+                <div
+                  key={`${referenceImage.base64.slice(0, 24)}-${index}`}
+                  className="relative"
+                >
+                  <img
+                    src={`data:${referenceImage.mediaType};base64,${referenceImage.base64}`}
+                    alt={`图生图参考 ${index + 1}`}
+                    className="size-14 rounded-xl border bg-muted object-cover sm:size-16"
+                  />
+                  {!isGenerating && (
+                    <button
+                      type="button"
+                      aria-label={`移除第 ${index + 1} 张参考图片`}
+                      className="absolute -top-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full border bg-background text-muted-foreground shadow-sm transition hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
+                      onClick={() =>
+                        setReferenceImages((current) =>
+                          current.filter((_, imageIndex) => imageIndex !== index),
+                        )
+                      }
+                    >
+                      <XIcon className="size-3" />
+                    </button>
+                  )}
+                </div>
+              ))}
+              {referenceImages.length < maxReferenceImages && (
+                <button
+                  type="button"
+                  aria-label="添加参考图片"
+                  className="flex size-14 items-center justify-center overflow-hidden rounded-xl border border-dashed border-border bg-muted/35 text-muted-foreground transition hover:border-primary/50 hover:bg-primary/5 hover:text-primary focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none sm:size-16"
+                  disabled={isGenerating || isGeneratingIdea}
+                  onClick={() => referenceImageInputRef.current?.click()}
+                >
+                  <ImagePlusIcon className="size-5" />
+                </button>
+              )}
+            </div>
             <SparklesIcon className="mt-1 size-4 shrink-0 text-primary" />
             <div className="min-w-0 flex-1">
               <label htmlFor="image-prompt" className="sr-only">
@@ -310,7 +529,11 @@ function ImageStudio() {
                     event.currentTarget.form?.requestSubmit();
                   }
                 }}
-                placeholder="描述你想创作的画面、光线、构图与风格…"
+                placeholder={
+                  referenceImages.length > 0
+                    ? "描述你希望如何修改参考图，例如更换背景、调整风格或增删元素…"
+                    : "描述你想创作的画面、光线、构图与风格…"
+                }
                 className="min-h-20 resize-none border-0 bg-transparent px-0 py-0 text-sm/relaxed shadow-none focus-visible:ring-0"
                 disabled={isGenerating || isGeneratingIdea}
               />
@@ -321,89 +544,63 @@ function ImageStudio() {
           </div>
 
           <div className="mt-2 flex flex-wrap items-center gap-1.5 rounded-xl border border-border/60 bg-muted/45 p-1.5">
-            <label className="relative inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs transition hover:bg-background">
-              <BotIcon className="size-3.5 text-muted-foreground" />
-              <span className="max-w-36 truncate">{selectedModel?.label}</span>
-              <ChevronDownIcon className="size-3 text-muted-foreground" />
-              <select
-                value={model}
-                onChange={(event) => setModel(event.target.value as ImageModel)}
-                className="absolute inset-0 cursor-pointer opacity-0"
-                aria-label="生成模型"
-                disabled={isGenerating}
-              >
-                {modelOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <StudioSelect
+              value={model}
+              onValueChange={setModel}
+              options={modelOptions}
+              label="生成模型"
+              triggerLabel={selectedModel?.label ?? model}
+              icon={<BotIcon />}
+              disabled={isGenerating}
+              contentClassName="min-w-56"
+            />
 
             <span className="h-4 w-px bg-border" aria-hidden="true" />
 
-            <label className="relative inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs transition hover:bg-background">
-              <RatioIcon className="size-3.5 text-muted-foreground" />
-              <span>{selectedSize?.ratio}</span>
-              <ChevronDownIcon className="size-3 text-muted-foreground" />
-              <select
-                value={size}
-                onChange={(event) => setSize(event.target.value as ImageSize)}
-                className="absolute inset-0 cursor-pointer opacity-0"
-                aria-label="画布比例"
-                disabled={isGenerating}
-              >
-                {sizeOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label} · {option.ratio}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <StudioSelect
+              value={size}
+              onValueChange={setSize}
+              options={sizeOptions.map((option) => ({
+                value: option.value,
+                label: option.label,
+                description: option.ratio,
+              }))}
+              label="画布比例"
+              triggerLabel={selectedSize?.ratio ?? size}
+              icon={<RatioIcon />}
+              disabled={isGenerating}
+            />
 
             {model === "sub2api" && (
               <>
                 <span className="h-4 w-px bg-border" aria-hidden="true" />
-                <label className="relative inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs transition hover:bg-background">
-                  <span>{qualityOptions.find((option) => option.value === quality)?.label}质量</span>
-                  <ChevronDownIcon className="size-3 text-muted-foreground" />
-                  <select
-                    value={quality}
-                    onChange={(event) => setQuality(event.target.value as ImageQuality)}
-                    className="absolute inset-0 cursor-pointer opacity-0"
-                    aria-label="生成质量"
-                    disabled={isGenerating}
-                  >
-                    {qualityOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <StudioSelect
+                  value={quality}
+                  onValueChange={setQuality}
+                  options={qualityOptions}
+                  label="生成质量"
+                  triggerLabel={`${qualityOptions.find((option) => option.value === quality)?.label ?? quality}质量`}
+                  disabled={isGenerating}
+                />
               </>
             )}
 
             <span className="h-4 w-px bg-border" aria-hidden="true" />
 
-            <label className="relative inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs transition hover:bg-background">
-              <Layers3Icon className="size-3.5 text-muted-foreground" />
-              <span>{quantity} 张</span>
-              <ChevronDownIcon className="size-3 text-muted-foreground" />
-              <select
-                value={quantity}
-                onChange={(event) => setQuantity(Number(event.target.value) as ImageQuantity)}
-                className="absolute inset-0 cursor-pointer opacity-0"
-                aria-label="生成数量"
-                disabled={isGenerating}
-              >
-                {quantityOptions.map((option) => (
-                  <option key={option} value={option}>
-                    {option} 张
-                  </option>
-                ))}
-              </select>
-            </label>
+            <StudioSelect
+              value={String(quantity)}
+              onValueChange={(value) =>
+                setQuantity(Number(value) as ImageQuantity)
+              }
+              options={quantityOptions.map((option) => ({
+                value: String(option),
+                label: `${option} 张`,
+              }))}
+              label="生成数量"
+              triggerLabel={`${quantity} 张`}
+              icon={<Layers3Icon />}
+              disabled={isGenerating}
+            />
 
             <Button
               type="button"
@@ -562,7 +759,7 @@ function GenerationCard({
           </h3>
           <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
             <span className="rounded-md border border-primary/25 bg-primary/10 px-2 py-1 font-medium text-primary">
-              文生图
+              AI 生图
             </span>
             <span className="rounded-md bg-muted px-2 py-1">
               {modelLabel(generation.model)}

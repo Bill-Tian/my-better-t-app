@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   ArrowRightIcon,
   AudioWaveformIcon,
+  FilmIcon,
   ImageIcon,
   MessageSquareTextIcon,
   SparklesIcon,
@@ -20,6 +21,14 @@ const workspaceTools = [
     icon: ImageIcon,
     action: "开始绘制",
     className: "from-blue-500/16 via-indigo-500/8",
+  },
+  {
+    to: "/video",
+    title: "AI 视频",
+    description: "通过文字或首帧图片生成视频，并持续查看渲染进度。",
+    icon: FilmIcon,
+    action: "开始创作",
+    className: "from-fuchsia-500/16 via-violet-500/8",
   },
   {
     to: "/ai",
@@ -57,7 +66,7 @@ function RouteComponent() {
               你好，{displayName}
             </h1>
             <p className="mt-3 text-sm/relaxed text-muted-foreground sm:text-base/relaxed">
-              今天想创造什么？从图像、对话或声音开始，让一个简单念头逐渐变成作品。
+              今天想创造什么？从图像、视频、对话或声音开始，让一个简单念头逐渐变成作品。
             </p>
           </div>
         </section>
@@ -71,11 +80,11 @@ function RouteComponent() {
               <h2 className="mt-1 text-lg font-semibold">选择创作工具</h2>
             </div>
             <span className="hidden text-[10px] text-muted-foreground sm:block">
-              3 个工具已就绪
+              4 个工具已就绪
             </span>
           </div>
 
-          <div className="grid gap-4 lg:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             {workspaceTools.map(
               ({ to, title, description, icon: Icon, action, className }) => (
                 <Link

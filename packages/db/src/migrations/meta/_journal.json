@@ -8,6 +8,13 @@
       "when": 1785136386997,
       "tag": "0000_quick_mimic",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1785249597284,
+      "tag": "0001_pink_lord_tyger",
+      "breakpoints": true
     }
   ]
 }
