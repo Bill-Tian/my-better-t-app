@@ -34,7 +34,11 @@ export const Route = createFileRoute("/_auth/image")({
 
 type ImageSize = "1024x1024" | "1024x1536" | "1536x1024";
 type ImageQuality = "low" | "medium" | "high";
-type ImageModel = "qwen-image-2.0-pro" | "grok-imagine-image" | "sub2api";
+type ImageModel =
+  | "qwen-image-2.0-pro"
+  | "grok-imagine-image"
+  | "gemini-image"
+  | "sub2api";
 type ImageQuantity = 1 | 2 | 3 | 4;
 
 type GeneratedAsset = {
@@ -81,6 +85,7 @@ const qualityOptions: Array<{ value: ImageQuality; label: string }> = [
 const modelOptions: Array<{ value: ImageModel; label: string }> = [
   { value: "qwen-image-2.0-pro", label: "Qwen-image-2.0" },
   { value: "grok-imagine-image", label: "Grok-imagine-image" },
+  { value: "gemini-image", label: "Gemini Image" },
   { value: "sub2api", label: "gpt-image-2" },
 ];
 

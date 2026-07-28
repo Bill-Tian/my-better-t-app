@@ -57,6 +57,22 @@ Beijing and Singapore API keys cannot be mixed. For Singapore, use
 `https://dashscope-intl.aliyuncs.com`; a workspace-specific Model Studio domain can also be
 provided as the base URL.
 
+## Gemini Image
+
+The image studio supports Gemini image models through an OpenAI-compatible gateway. Add these
+variables to `apps/web/.env`:
+
+```bash
+GEMINI_API_KEY=your-api-key
+GEMINI_BASE_URL=http://your-gateway.example/v1
+GEMINI_IMAGE_MODEL=gemini-3.1-flash-image
+```
+
+`GEMINI_BASE_URL` may be an OpenAI-compatible `/v1` base such as CLIProxyAPI or the full
+`/chat/completions` endpoint. Requests use Bearer authentication and images are read from the
+OpenAI-compatible `message.images` response. The selected aspect ratio is included in the
+prompt; multiple images are generated as separate requests and saved to the existing history.
+
 ## Voice Design
 
 The authenticated `/voice-design` route creates custom Qwen-TTS or CosyVoice voices from a

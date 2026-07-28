@@ -10,7 +10,7 @@ import { z } from "zod";
 const requestSchema = z.object({
   prompt: z.string().trim().min(3).max(2000),
   model: z
-    .enum(["qwen-image-2.0-pro", "grok-imagine-image", "sub2api"])
+    .enum(["qwen-image-2.0-pro", "grok-imagine-image", "gemini-image", "sub2api"])
     .default("sub2api"),
   size: z.enum(["1024x1024", "1024x1536", "1536x1024"]),
   quality: z.enum(["low", "medium", "high"]),
@@ -35,7 +35,7 @@ const qwenSizeByImageSize: Record<ImageSize, string> = {
   "1536x1024": "2368*1728",
 };
 
-const grokAspectRatioByImageSize: Record<ImageSize, string> = {
+const aspectRatioByImageSize: Record<ImageSize, string> = {
   "1024x1024": "1:1",
   "1024x1536": "2:3",
   "1536x1024": "3:2",
@@ -80,6 +80,38 @@ const grokErrorSchema = z.object({
       message: z.string().optional(),
     })
     .optional(),
+});
+
+const geminiErrorSchema = z.object({
+  error: z
+    .object({
+      code: z.number().optional(),
+      message: z.string().optional(),
+      status: z.string().optional(),
+    })
+    .optional(),
+});
+
+const geminiResponseSchema = z.object({
+  choices: z.array(
+    z.object({
+      message: z.object({
+        images: z
+          .array(
+            z.object({
+              image_url: z.union([
+                z.object({
+                  url: z.string().min(1),
+                }),
+                z.string().min(1),
+              ]),
+            }),
+          )
+          .optional(),
+        content: z.string().nullable().optional(),
+      }),
+    }),
+  ),
 });
 
 const json = (body: unknown, status = 200) =>
@@ -168,6 +200,13 @@ const getGrokApiBaseUrl = () => {
 
 const getGrokImageEndpoint = () => `${getGrokApiBaseUrl()}/images/generations`;
 
+const getGeminiImageEndpoint = () => {
+  const baseUrl = env.GEMINI_BASE_URL.replace(/\/+$/, "");
+  return baseUrl.endsWith("/chat/completions")
+    ? baseUrl
+    : `${baseUrl}/chat/completions`;
+};
+
 const arrayBufferToBase64 = (buffer: ArrayBuffer) => {
   const bytes = new Uint8Array(buffer);
   const chunkSize = 0x8000;
@@ -178,6 +217,50 @@ const arrayBufferToBase64 = (buffer: ArrayBuffer) => {
   }
 
   return btoa(binary);
+};
+
+const readGeminiJsonResponse = async (response: Response) => {
+  const text = await response.text();
+
+  if (!text.trim()) {
+    throw new Error(`GEMINI_GATEWAY_EMPTY_RESPONSE:HTTP ${response.status}`);
+  }
+
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    throw new Error(
+      `GEMINI_GATEWAY_INVALID_RESPONSE:HTTP ${response.status}:${text.slice(0, 160)}`,
+    );
+  }
+};
+
+const imageReferenceToGeneratedImage = async (
+  imageReference: string,
+): Promise<GeneratedImage> => {
+  const dataUrlMatch = imageReference.match(
+    /^data:([^;,]+);base64,([\s\S]+)$/,
+  );
+
+  if (dataUrlMatch) {
+    return {
+      mediaType: dataUrlMatch[1] || "image/png",
+      base64: dataUrlMatch[2] || "",
+    };
+  }
+
+  const imageResponse = await fetch(imageReference, {
+    signal: AbortSignal.timeout(60_000),
+  });
+
+  if (!imageResponse.ok) {
+    throw new Error(`GEMINI_IMAGE_DOWNLOAD_FAILED:HTTP ${imageResponse.status}`);
+  }
+
+  return {
+    base64: arrayBufferToBase64(await imageResponse.arrayBuffer()),
+    mediaType: imageResponse.headers.get("content-type") || "image/png",
+  };
 };
 
 const generateWithQwen = async (prompt: string, size: ImageSize, quantity: number) => {
@@ -269,7 +352,7 @@ const generateWithGrok = async (prompt: string, size: ImageSize, quantity: numbe
       prompt,
       response_format: "b64_json",
       n: quantity,
-      aspect_ratio: grokAspectRatioByImageSize[size],
+      aspect_ratio: aspectRatioByImageSize[size],
       resolution: "1k",
     }),
     signal: AbortSignal.timeout(180_000),
@@ -315,6 +398,77 @@ const generateWithGrok = async (prompt: string, size: ImageSize, quantity: numbe
           imageResponse.headers.get("content-type") || image.mime_type || "image/jpeg",
       };
     }),
+  );
+};
+
+const generateWithGemini = async (
+  prompt: string,
+  size: ImageSize,
+  quantity: number,
+) => {
+  if (!env.GEMINI_API_KEY) {
+    throw new Error("GEMINI_API_KEY_MISSING");
+  }
+
+  if (!env.GEMINI_BASE_URL) {
+    throw new Error("GEMINI_BASE_URL_MISSING");
+  }
+
+  const generateOneImage = async (): Promise<GeneratedImage> => {
+    const response = await fetch(getGeminiImageEndpoint(), {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.GEMINI_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: env.GEMINI_IMAGE_MODEL || "gemini-3.1-flash-image",
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: `${prompt}\n\n生成一张 ${aspectRatioByImageSize[size]} 比例的图片。`,
+              },
+            ],
+          },
+        ],
+        max_tokens: 4096,
+      }),
+      signal: AbortSignal.timeout(180_000),
+    });
+
+    const payload = await readGeminiJsonResponse(response);
+
+    if (!response.ok) {
+      const geminiError = geminiErrorSchema.safeParse(payload);
+      const details = geminiError.success
+        ? geminiError.data.error?.message
+        : `HTTP ${response.status}`;
+      throw new Error(
+        `GEMINI_REQUEST_FAILED:${details || `HTTP ${response.status}`}`,
+      );
+    }
+
+    const result = geminiResponseSchema.safeParse(payload);
+    const message = result.success
+      ? result.data.choices[0]?.message
+      : undefined;
+    const firstImageUrl = message?.images?.[0]?.image_url;
+    const imageReference =
+      (typeof firstImageUrl === "string" ? firstImageUrl : firstImageUrl?.url) ||
+      message?.content?.match(/data:image\/[^;,]+;base64,[A-Za-z0-9+/=\r\n]+/)?.[0];
+
+    if (!imageReference) {
+      throw new Error("GEMINI_IMAGE_MISSING");
+    }
+
+    return imageReferenceToGeneratedImage(imageReference);
+  };
+
+  return Promise.all(
+    Array.from({ length: quantity }, () => generateOneImage()),
   );
 };
 
@@ -487,6 +641,21 @@ export const Route = createFileRoute("/api/image/$")({
             });
           }
 
+          if (model === "gemini-image") {
+            const images = await generateWithGemini(prompt, size, quantity);
+            const generation = await saveGeneration({
+              userId: session.user.id,
+              input: body.data,
+              model: env.GEMINI_IMAGE_MODEL || "gemini-3.1-flash-image",
+              images,
+            });
+
+            return json({
+              ...generation,
+              image: generation.images[0],
+            });
+          }
+
           const sub2api = createOpenAI({
             name: "sub2api",
             apiKey: env.SUB2API_API_KEY,
@@ -562,22 +731,40 @@ export const Route = createFileRoute("/api/image/$")({
           const isTimeout = error instanceof DOMException && error.name === "TimeoutError";
           const isQwen = model === "qwen-image-2.0-pro";
           const isGrok = model === "grok-imagine-image";
+          const isGemini = model === "gemini-image";
           let errorMessage = "图片生成失败，请稍后重试。";
 
           if (isTimeout) {
             errorMessage = "图片生成超时，请稍后重试。";
           } else if (message === "DASHSCOPE_API_KEY_MISSING") {
             errorMessage = "尚未配置 DASHSCOPE_API_KEY，无法使用千问生图。";
-          } else if (message === "XAI_API_KEY_MISSING") {
-            errorMessage = "尚未配置 XAI_API_KEY，无法使用 Grok 生图。";
+          } else if (message === "GROK2API_IDEA_MODEL_API_KEY_MISSING") {
+            errorMessage =
+              "尚未配置 GROK2API_IDEA_MODEL_API_KEY，无法使用 Grok 生图。";
+          } else if (message === "GEMINI_API_KEY_MISSING") {
+            errorMessage = "尚未配置 GEMINI_API_KEY，无法使用 Gemini 生图。";
+          } else if (message === "GEMINI_BASE_URL_MISSING") {
+            errorMessage =
+              "尚未配置 GEMINI_BASE_URL，无法连接 Gemini 兼容网关。";
           } else if (
             isGrok &&
             (message.includes("InvalidApiKey") ||
               message.includes("Authentication") ||
               message.includes("Unauthorized") ||
+              message.includes("403") ||
               message.includes("401"))
           ) {
             errorMessage = "Grok API Key 无效，请检查 GROK2API_IDEA_MODEL_API_KEY 配置。";
+          } else if (
+            isGemini &&
+            (message.includes("API_KEY_INVALID") ||
+              message.includes("PERMISSION_DENIED") ||
+              message.includes("Unauthorized") ||
+              message.includes("401") ||
+              message.includes("403"))
+          ) {
+            errorMessage =
+              "Gemini API Key 无效或没有当前图像模型权限，请检查配置。";
           } else if (
             isQwen &&
             (message.includes("InvalidApiKey") ||
@@ -587,6 +774,16 @@ export const Route = createFileRoute("/api/image/$")({
             errorMessage = "千问 API Key 无效或与当前地域不匹配，请检查 DashScope 配置。";
           } else if (isGrok) {
             errorMessage = "Grok 图片生成失败，请检查 xAI 配置或稍后重试。";
+          } else if (message === "GEMINI_IMAGE_MISSING") {
+            errorMessage = "Gemini 已完成请求，但没有返回图片，请重试。";
+          } else if (message.includes("GEMINI_GATEWAY_EMPTY_RESPONSE")) {
+            errorMessage =
+              "Gemini 网关返回了空响应，请检查网关状态或模型账号配置。";
+          } else if (message.includes("GEMINI_GATEWAY_INVALID_RESPONSE")) {
+            errorMessage = "Gemini 上游返回了无法识别的响应，请检查 Base URL。";
+          } else if (isGemini) {
+            errorMessage =
+              "Gemini 图片生成失败，请检查 BASE_URL、IMAGE_MODEL 或稍后重试。";
           } else if (isQwen) {
             errorMessage = "千问图片生成失败，请检查地域配置或稍后重试。";
           } else if (message === "SUB2API_IMAGE_MISSING") {
