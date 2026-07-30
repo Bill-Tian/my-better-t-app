@@ -19,37 +19,22 @@ const requestSchema = z.object({
 });
 
 const startResponseSchema = z.object({
-  request_id: z.string().min(1),
+  output: z.object({
+    task_id: z.string().min(1),
+    task_status: z.string(),
+  }),
+  request_id: z.string().optional(),
 });
 
-const fileOutputSchema = z
-  .object({
-    file_id: z.string().optional(),
-    public_url: z.string().url().optional(),
-  })
-  .optional();
-
 const pollResponseSchema = z.object({
-  status: z.string(),
-  progress: z.number().optional(),
-  model: z.string().optional(),
-  video: z
-    .object({
-      url: z.string().url().optional(),
-      duration: z.number().optional(),
-      respect_moderation: z.boolean().optional(),
-      file_output: fileOutputSchema,
-    })
-    .optional(),
-  file_output: fileOutputSchema,
-  error: z
-    .union([
-      z.string(),
-      z.object({
-        message: z.string().optional(),
-      }),
-    ])
-    .optional(),
+  request_id: z.string().optional(),
+  output: z.object({
+    task_id: z.string(),
+    task_status: z.string(),
+    video_url: z.string().url().optional(),
+    code: z.string().optional(),
+    message: z.string().optional(),
+  }),
 });
 
 type VideoGenerationRow = typeof videoGeneration.$inferSelect;
@@ -64,28 +49,46 @@ const json = (body: unknown, status = 200) =>
     },
   });
 
-const getGrokApiBaseUrl = () => {
-  const defaultBaseUrl = "https://api.x.ai/v1";
-  const baseUrl = (env.GROK2API_BASE_URL || defaultBaseUrl).replace(/\/+$/, "");
-  const endpointSuffixes = [
-    "/images/generations",
-    "/images/edits",
-    "/videos/generations",
-  ];
-  const suffix = endpointSuffixes.find((item) => baseUrl.endsWith(item));
+const getDashScopeApiBaseUrl = () => {
+  const defaultBaseUrl = "https://dashscope.aliyuncs.com";
+  const baseUrl = (env.DASHSCOPE_BASE_URL || defaultBaseUrl).replace(/\/+$/, "");
 
-  return suffix ? baseUrl.slice(0, -suffix.length) : baseUrl;
+  if (baseUrl.endsWith("/api/v1")) {
+    return baseUrl;
+  }
+  return `${baseUrl}/api/v1`;
 };
 
-const getVideoGenerationEndpoint = () =>
-  `${getGrokApiBaseUrl()}/videos/generations`;
+const getDashScopeVideoSynthesisEndpoint = () =>
+  `${getDashScopeApiBaseUrl()}/services/aigc/video-generation/video-synthesis`;
 
-const getVideoStatusEndpoint = (requestId: string) =>
-  `${getGrokApiBaseUrl()}/videos/${encodeURIComponent(requestId)}`;
+const getDashScopeTaskEndpoint = (taskId: string) =>
+  `${getDashScopeApiBaseUrl()}/tasks/${encodeURIComponent(taskId)}`;
 
 const referenceImageToDataUrl = (
   image: z.infer<typeof referenceImageSchema>,
 ) => `data:${image.mediaType};base64,${image.base64}`;
+
+const getDashScopeVideoSize = (
+  aspectRatio: z.infer<typeof requestSchema>["aspectRatio"],
+  resolution: z.infer<typeof requestSchema>["resolution"],
+) => {
+  const is720p = resolution === "720p";
+  switch (aspectRatio) {
+    case "16:9":
+      return is720p ? "1280*720" : "960*540";
+    case "9:16":
+      return is720p ? "720*1280" : "540*960";
+    case "1:1":
+      return is720p ? "720*720" : "540*540";
+    case "4:3":
+      return is720p ? "960*720" : "640*480";
+    case "3:4":
+      return is720p ? "720*960" : "480*640";
+    default:
+      return "1280*720";
+  }
+};
 
 const serializeGeneration = (generation: VideoGenerationRow) => ({
   id: generation.id,
@@ -103,11 +106,6 @@ const serializeGeneration = (generation: VideoGenerationRow) => ({
   updatedAt: generation.updatedAt.toISOString(),
 });
 
-const getPollError = (payload: z.infer<typeof pollResponseSchema>) => {
-  if (typeof payload.error === "string") return payload.error;
-  return payload.error?.message;
-};
-
 const syncGeneration = async (
   db: Db,
   generation: VideoGenerationRow,
@@ -115,9 +113,9 @@ const syncGeneration = async (
   if (generation.status !== "pending") return generation;
 
   try {
-    const response = await fetch(getVideoStatusEndpoint(generation.requestId), {
+    const response = await fetch(getDashScopeTaskEndpoint(generation.requestId), {
       headers: {
-        Authorization: `Bearer ${env.GROK2API_IDEA_MODEL_API_KEY}`,
+        Authorization: `Bearer ${env.DASHSCOPE_API_KEY}`,
       },
       signal: AbortSignal.timeout(30_000),
     });
@@ -134,29 +132,22 @@ const syncGeneration = async (
       return generation;
     }
 
-    const status = result.data.status.toLowerCase();
-    const progress = Math.max(
-      0,
-      Math.min(100, Math.round(result.data.progress ?? generation.progress)),
-    );
+    const status = result.data.output.task_status.toUpperCase();
     const updatedAt = new Date();
 
-    if (status === "done") {
-      const fileOutput =
-        result.data.video?.file_output ?? result.data.file_output;
-      const videoUrl = fileOutput?.public_url ?? result.data.video?.url;
+    if (status === "SUCCEEDED") {
+      const videoUrl = result.data.output.video_url;
       const nextValues = videoUrl
         ? {
             status: "completed",
             progress: 100,
             videoUrl,
-            fileId: fileOutput?.file_id ?? null,
             error: null,
             updatedAt,
           }
         : {
             status: "failed",
-            progress,
+            progress: generation.progress,
             error: "视频生成完成，但上游没有返回可播放地址。",
             updatedAt,
           };
@@ -169,15 +160,15 @@ const syncGeneration = async (
       return { ...generation, ...nextValues };
     }
 
-    if (status === "failed" || status === "expired") {
+    if (status === "FAILED" || status === "UNKNOWN") {
+      const errorMsg =
+        result.data.output.message ||
+        result.data.output.code ||
+        "视频生成失败，请稍后重试。";
       const nextValues = {
         status: "failed",
-        progress,
-        error:
-          getPollError(result.data) ||
-          (status === "expired"
-            ? "视频生成任务已过期，请重新生成。"
-            : "视频生成失败，请稍后重试。"),
+        progress: generation.progress,
+        error: errorMsg,
         updatedAt,
       };
 
@@ -189,13 +180,16 @@ const syncGeneration = async (
       return { ...generation, ...nextValues };
     }
 
-    if (progress !== generation.progress) {
-      const nextValues = { progress, updatedAt };
-      await db
-        .update(videoGeneration)
-        .set(nextValues)
-        .where(eq(videoGeneration.id, generation.id));
-      return { ...generation, ...nextValues };
+    if (status === "RUNNING") {
+      const progress = Math.max(generation.progress, 50);
+      if (progress !== generation.progress) {
+        const nextValues = { progress, updatedAt };
+        await db
+          .update(videoGeneration)
+          .set(nextValues)
+          .where(eq(videoGeneration.id, generation.id));
+        return { ...generation, ...nextValues };
+      }
     }
   } catch (error) {
     console.error("Video status sync error:", error);
@@ -251,11 +245,10 @@ export const Route = createFileRoute("/api/video/$")({
           return json({ error: "请先登录后再生成视频。" }, 401);
         }
 
-        if (!env.GROK2API_IDEA_MODEL_API_KEY) {
+        if (!env.DASHSCOPE_API_KEY) {
           return json(
             {
-              error:
-                "尚未配置 GROK2API_IDEA_MODEL_API_KEY，无法使用 Grok 视频生成。",
+              error: "尚未配置 DASHSCOPE_API_KEY，无法使用千问万相视频生成。",
             },
             503,
           );
@@ -269,34 +262,37 @@ export const Route = createFileRoute("/api/video/$")({
         }
 
         const id = crypto.randomUUID();
-        const model = "grok-imagine-video";
+        const model = "wan2.2-i2v-plus";
         const mode = body.data.referenceImage
           ? "image-to-video"
           : "text-to-video";
 
         try {
-          const response = await fetch(getVideoGenerationEndpoint(), {
+          const response = await fetch(getDashScopeVideoSynthesisEndpoint(), {
             method: "POST",
             headers: {
-              Authorization: `Bearer ${env.GROK2API_IDEA_MODEL_API_KEY}`,
+              Authorization: `Bearer ${env.DASHSCOPE_API_KEY}`,
+              "X-DashScope-Async": "enable",
               "Content-Type": "application/json",
             },
             body: JSON.stringify({
               model,
-              prompt: body.data.prompt,
-              duration: body.data.duration,
-              aspect_ratio: body.data.aspectRatio,
-              resolution: body.data.resolution,
-              ...(body.data.referenceImage
-                ? {
-                    image: {
-                      url: referenceImageToDataUrl(body.data.referenceImage),
-                    },
-                  }
-                : {}),
-              storage_options: {
-                filename: `ai-video-${id}.mp4`,
-                public_url: true,
+              input: {
+                prompt: body.data.prompt,
+                ...(body.data.referenceImage
+                  ? {
+                      img_url: referenceImageToDataUrl(
+                        body.data.referenceImage,
+                      ),
+                    }
+                  : {}),
+              },
+              parameters: {
+                size: getDashScopeVideoSize(
+                  body.data.aspectRatio,
+                  body.data.resolution,
+                ),
+                duration: body.data.duration,
               },
             }),
             signal: AbortSignal.timeout(60_000),
@@ -307,26 +303,23 @@ export const Route = createFileRoute("/api/video/$")({
             const message =
               typeof payload === "object" &&
               payload !== null &&
-              "error" in payload &&
-              typeof payload.error === "object" &&
-              payload.error !== null &&
-              "message" in payload.error &&
-              typeof payload.error.message === "string"
-                ? payload.error.message
+              "message" in payload &&
+              typeof payload.message === "string"
+                ? payload.message
                 : `HTTP ${response.status}`;
-            throw new Error(`XAI_VIDEO_REQUEST_FAILED:${message}`);
+            throw new Error(`DASHSCOPE_VIDEO_REQUEST_FAILED:${message}`);
           }
 
           const result = startResponseSchema.safeParse(payload);
           if (!result.success) {
-            throw new Error("XAI_VIDEO_REQUEST_ID_MISSING");
+            throw new Error("DASHSCOPE_VIDEO_REQUEST_ID_MISSING");
           }
 
           const createdAt = new Date();
           const generation: VideoGenerationRow = {
             id,
             userId: session.user.id,
-            requestId: result.data.request_id,
+            requestId: result.data.output.task_id,
             prompt: body.data.prompt,
             model,
             mode,
@@ -334,7 +327,7 @@ export const Route = createFileRoute("/api/video/$")({
             aspectRatio: body.data.aspectRatio,
             resolution: body.data.resolution,
             status: "pending",
-            progress: 0,
+            progress: 10,
             videoUrl: null,
             fileId: null,
             error: null,
@@ -362,14 +355,14 @@ export const Route = createFileRoute("/api/video/$")({
             message.includes("403")
           ) {
             errorMessage =
-              "Grok API Key 无效或没有视频模型权限，请检查账号配置。";
-          } else if (message.startsWith("XAI_VIDEO_REQUEST_FAILED:")) {
-            errorMessage = `Grok 视频任务创建失败：${message.replace(
-              "XAI_VIDEO_REQUEST_FAILED:",
+              "DashScope API Key 无效或没有视频模型权限，请检查账号配置。";
+          } else if (message.startsWith("DASHSCOPE_VIDEO_REQUEST_FAILED:")) {
+            errorMessage = `视频任务创建失败：${message.replace(
+              "DASHSCOPE_VIDEO_REQUEST_FAILED:",
               "",
             )}`;
-          } else if (message === "XAI_VIDEO_REQUEST_ID_MISSING") {
-            errorMessage = "Grok 没有返回有效的视频任务编号，请稍后重试。";
+          } else if (message === "DASHSCOPE_VIDEO_REQUEST_ID_MISSING") {
+            errorMessage = "DashScope 没有返回有效的视频任务编号，请稍后重试。";
           }
 
           return json({ error: errorMessage }, isTimeout ? 504 : 502);
@@ -378,3 +371,4 @@ export const Route = createFileRoute("/api/video/$")({
     },
   },
 });
+

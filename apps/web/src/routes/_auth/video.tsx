@@ -522,7 +522,7 @@ function VideoStudio() {
 
             <span className="inline-flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-xs">
               <BotIcon className="size-3.5 text-muted-foreground" />
-              Grok Imagine Video
+              Wan 2.2 图生视频
             </span>
 
             <StudioSelect
@@ -678,7 +678,7 @@ function VideoGenerationCard({
                 : "文生视频"}
             </span>
             <span className="rounded-md bg-muted px-2 py-1">
-              Grok Imagine Video
+              Wan 2.2 图生视频
             </span>
             <span className="rounded-md bg-muted px-2 py-1">
               {generation.aspectRatio} · {generation.resolution} ·{" "}

@@ -16,16 +16,28 @@ export const Route = createFileRoute("/api/ai/$")({
         try {
           const { messages }: { messages: UIMessage[] } = await request.json();
 
-          console.log("messages",messages);
+          if (!env.DASHSCOPE_API_KEY) {
+            return new Response(
+              JSON.stringify({ error: "尚未配置 DASHSCOPE_API_KEY" }),
+              {
+                status: 503,
+                headers: { "Content-Type": "application/json" },
+              },
+            );
+          }
 
-          const sub2api = createOpenAI({
-            name: "chatgpt-5.5",
-            apiKey: env.SUB2API_API_KEY,
-            baseURL: env.SUB2API_BASE_URL,
+          const qwen = createOpenAI({
+            name: "qwen",
+            apiKey: env.DASHSCOPE_API_KEY,
+            baseURL:
+              (env.DASHSCOPE_BASE_URL || "https://dashscope.aliyuncs.com").replace(
+                /\/+$/,
+                "",
+              ) + "/compatible-mode/v1",
           });
 
           const result = streamText({
-            model: sub2api.chat(env.SUB2API_MODEL),
+            model: qwen.chat("qwen-max"),
             messages: await convertToModelMessages(messages),
           });
 
@@ -43,3 +55,4 @@ export const Route = createFileRoute("/api/ai/$")({
     },
   },
 });
+

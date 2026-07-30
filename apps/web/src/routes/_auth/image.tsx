@@ -46,14 +46,29 @@ type ImageSize = "1024x1024" | "1024x1536" | "1536x1024";
 type ImageQuality = "low" | "medium" | "high";
 type ImageModel =
   | "qwen-image-2.0-pro"
-  | "grok-imagine-image"
-  | "gemini-image"
-  | "sub2api";
+  | "gemini-image";
 type ImageQuantity = 1 | 2 | 3 | 4;
 
 type GeneratedAsset = {
-  base64: string;
+  id: string;
   mediaType: string;
+  base64?: string;
+};
+
+const getImageUrl = (asset: GeneratedAsset) =>
+  asset.base64
+    ? `data:${asset.mediaType};base64,${asset.base64}`
+    : `/api/image?assetId=${asset.id}`;
+
+const downloadGeneratedImage = (
+  generation: ImageGeneration,
+  image: GeneratedAsset,
+  index: number,
+) => {
+  const anchor = document.createElement("a");
+  anchor.href = getImageUrl(image);
+  anchor.download = `ai-image-${generation.id}-${index + 1}.${image.mediaType.includes("jpeg") ? "jpg" : "png"}`;
+  anchor.click();
 };
 
 type ReferenceImage = {
@@ -99,9 +114,7 @@ const qualityOptions: Array<{ value: ImageQuality; label: string }> = [
 
 const modelOptions: Array<{ value: ImageModel; label: string }> = [
   { value: "qwen-image-2.0-pro", label: "Qwen-image-2.0" },
-  { value: "grok-imagine-image", label: "Grok-imagine-image" },
   { value: "gemini-image", label: "Gemini Image" },
-  { value: "sub2api", label: "gpt-image-2" },
 ];
 
 const quantityOptions: ImageQuantity[] = [1, 2, 3, 4];
@@ -163,16 +176,7 @@ const imageAspectClass: Record<ImageSize, string> = {
   "1536x1024": "aspect-[3/2]",
 };
 
-const downloadGeneratedImage = (
-  generation: ImageGeneration,
-  image: GeneratedAsset,
-  index: number,
-) => {
-  const anchor = document.createElement("a");
-  anchor.href = `data:${image.mediaType};base64,${image.base64}`;
-  anchor.download = `ai-image-${generation.id}-${index + 1}.${image.mediaType.includes("jpeg") ? "jpg" : "png"}`;
-  anchor.click();
-};
+
 
 function StudioSelect<T extends string>({
   value,
@@ -253,9 +257,9 @@ function StudioSelect<T extends string>({
 
 function ImageStudio() {
   const [prompt, setPrompt] = useState("");
-  const [model, setModel] = useState<ImageModel>("grok-imagine-image");
+  const [model, setModel] = useState<ImageModel>("qwen-image-2.0-pro");
   const [size, setSize] = useState<ImageSize>("1024x1024");
-  const [quality, setQuality] = useState<ImageQuality>("medium");
+  const [quality] = useState<ImageQuality>("medium");
   const [quantity, setQuantity] = useState<ImageQuantity>(1);
   const [referenceImages, setReferenceImages] = useState<ReferenceImage[]>([]);
   const [generations, setGenerations] = useState<ImageGeneration[]>([]);
@@ -353,7 +357,7 @@ function ImageStudio() {
       }
 
       setPrompt(data.prompt);
-      toast.success("Grok 4.5 已生成一条新灵感");
+      toast.success("AI 已生成一条新灵感");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "AI 灵感生成失败，请稍后重试");
     } finally {
@@ -571,19 +575,6 @@ function ImageStudio() {
               disabled={isGenerating}
             />
 
-            {model === "sub2api" && (
-              <>
-                <span className="h-4 w-px bg-border" aria-hidden="true" />
-                <StudioSelect
-                  value={quality}
-                  onValueChange={setQuality}
-                  options={qualityOptions}
-                  label="生成质量"
-                  triggerLabel={`${qualityOptions.find((option) => option.value === quality)?.label ?? quality}质量`}
-                  disabled={isGenerating}
-                />
-              </>
-            )}
 
             <span className="h-4 w-px bg-border" aria-hidden="true" />
 
@@ -813,7 +804,7 @@ function GenerationCard({
                 aria-label={`预览第 ${index + 1} 张图片`}
               >
                 <img
-                  src={`data:${image.mediaType};base64,${image.base64}`}
+                  src={getImageUrl(image)}
                   alt={`${generation.prompt}，第 ${index + 1} 张`}
                   loading="lazy"
                   className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.01]"
@@ -931,7 +922,7 @@ function ImagePreview({
         </div>
         <div className="relative flex min-h-0 items-center justify-center p-2">
           <img
-            src={`data:${selection.image.mediaType};base64,${selection.image.base64}`}
+            src={getImageUrl(selection.image)}
             alt={`${selection.generation.prompt}，第 ${selection.index + 1} 张预览`}
             className="max-h-[calc(100svh-8rem)] max-w-[calc(100vw-2rem)] object-contain sm:max-w-[calc(100vw-4rem)]"
           />
