@@ -73,20 +73,20 @@ const getDashScopeVideoSize = (
   aspectRatio: z.infer<typeof requestSchema>["aspectRatio"],
   resolution: z.infer<typeof requestSchema>["resolution"],
 ) => {
-  const is720p = resolution === "720p";
+  const isHigh = resolution === "720p"; // 720p选项映射到模型的高清尺寸
   switch (aspectRatio) {
     case "16:9":
-      return is720p ? "1280*720" : "960*540";
+      return isHigh ? "1920*1080" : "832*480";
     case "9:16":
-      return is720p ? "720*1280" : "540*960";
+      return isHigh ? "1080*1920" : "480*832";
     case "1:1":
-      return is720p ? "720*720" : "540*540";
+      return isHigh ? "1440*1440" : "624*624";
     case "4:3":
-      return is720p ? "960*720" : "640*480";
+      return isHigh ? "1632*1248" : "1632*1248";
     case "3:4":
-      return is720p ? "720*960" : "480*640";
+      return isHigh ? "1248*1632" : "1248*1632";
     default:
-      return "1280*720";
+      return "1920*1080";
   }
 };
 
@@ -262,10 +262,12 @@ export const Route = createFileRoute("/api/video/$")({
         }
 
         const id = crypto.randomUUID();
-        const model = "wan2.2-i2v-plus";
         const mode = body.data.referenceImage
           ? "image-to-video"
           : "text-to-video";
+        const model = mode === "image-to-video" 
+          ? "wan2.2-i2v-plus" 
+          : "wan2.2-t2v-plus";
 
         try {
           const response = await fetch(getDashScopeVideoSynthesisEndpoint(), {

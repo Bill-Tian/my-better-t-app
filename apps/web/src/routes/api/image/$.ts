@@ -247,6 +247,21 @@ const imageReferenceToGeneratedImage = async (
   };
 };
 
+const getQwenModel = (hasReferenceImages: boolean) => {
+  if (hasReferenceImages) {
+    const configured = env.DASHSCOPE_IMAGE_EDIT_MODEL;
+    if (!configured || !configured.includes("edit")) {
+      return "qwen-image-edit-max";
+    }
+    return configured;
+  }
+  const configured = env.DASHSCOPE_IMAGE_MODEL;
+  if (!configured || configured.includes("edit")) {
+    return "qwen-image-2.0-pro";
+  }
+  return configured;
+};
+
 const generateWithQwen = async (
   prompt: string,
   size: ImageSize,
@@ -257,6 +272,8 @@ const generateWithQwen = async (
     throw new Error("DASHSCOPE_API_KEY_MISSING");
   }
 
+  const model = getQwenModel(referenceImages.length > 0);
+
   const response = await fetch(getDashScopeEndpoint(), {
     method: "POST",
     headers: {
@@ -264,9 +281,7 @@ const generateWithQwen = async (
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: referenceImages.length
-        ? env.DASHSCOPE_IMAGE_EDIT_MODEL || "qwen-image-edit-max"
-        : env.DASHSCOPE_IMAGE_MODEL || "qwen-image-2.0-pro",
+      model,
       input: {
         messages: [
           {
@@ -601,9 +616,7 @@ export const Route = createFileRoute("/api/image/$")({
               quantity,
               referenceImages,
             );
-            const qwenModel = referenceImages.length
-              ? env.DASHSCOPE_IMAGE_EDIT_MODEL || "qwen-image-edit-max"
-              : env.DASHSCOPE_IMAGE_MODEL || "qwen-image-2.0-pro";
+            const qwenModel = getQwenModel(referenceImages.length > 0);
 
             const generation = await saveGeneration({
               userId: session.user.id,
@@ -674,6 +687,8 @@ export const Route = createFileRoute("/api/image/$")({
               message.includes("401"))
           ) {
             errorMessage = "千问 API Key 无效或与当前地域不匹配，请检查 DashScope 配置。";
+          } else if (isQwen && message.includes("DataInspectionFailed")) {
+            errorMessage = "提示词未通过安全审核，请修改或移除敏感词汇后重试。";
           } else if (message === "GEMINI_IMAGE_MISSING") {
             errorMessage = "Gemini 已完成请求，但没有返回图片，请重试。";
           } else if (message.includes("GEMINI_GATEWAY_EMPTY_RESPONSE")) {

@@ -15,7 +15,7 @@ const links = [
   { to: "/image", label: "AI 图像", icon: ImageIcon },
   { to: "/video", label: "AI 视频", icon: FilmIcon },
   { to: "/ai", label: "AI 对话", icon: MessageSquareTextIcon },
-  { to: "/voice-design", label: "声音设计", icon: AudioWaveformIcon },
+  { to: "/voice-design", label: "AI 语音", icon: AudioWaveformIcon },
 ] as const;
 
 export default function Header() {

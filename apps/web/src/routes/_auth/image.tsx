@@ -511,6 +511,7 @@ function ImageStudio() {
                 <button
                   type="button"
                   aria-label="添加参考图片"
+                  title="上传参考图（开启图生图模式）"
                   className="flex size-14 items-center justify-center overflow-hidden rounded-xl border border-dashed border-border bg-muted/35 text-muted-foreground transition hover:border-primary/50 hover:bg-primary/5 hover:text-primary focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none sm:size-16"
                   disabled={isGenerating || isGeneratingIdea}
                   onClick={() => referenceImageInputRef.current?.click()}
@@ -614,6 +615,21 @@ function ImageStudio() {
               )}
             </Button>
 
+            <span className="h-4 w-px bg-border hidden sm:inline" aria-hidden="true" />
+
+            {/* 模式展示 Badge */}
+            {referenceImages.length > 0 ? (
+              <div className="flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
+                <ImageIcon className="size-3.5" />
+                <span>图生图模式 ({referenceImages.length}/3)</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5 rounded-lg border border-border/60 bg-muted/60 px-2.5 py-1 text-xs font-medium text-muted-foreground">
+                <SparklesIcon className="size-3.5 text-primary" />
+                <span>文生图模式</span>
+              </div>
+            )}
+
             <div className="ml-auto flex items-center gap-2">
               <span className="hidden text-[10px] text-muted-foreground sm:inline">
                 ⌘ Enter
@@ -626,12 +642,17 @@ function ImageStudio() {
                 {isGenerating ? (
                   <>
                     <Loader2Icon className="animate-spin" />
-                    绘制中
+                    {referenceImages.length > 0 ? "重绘中..." : "绘制中..."}
+                  </>
+                ) : referenceImages.length > 0 ? (
+                  <>
+                    <ImageIcon className="size-4" />
+                    基于参考图生成
                   </>
                 ) : (
                   <>
-                    <SparklesIcon />
-                    生成图片
+                    <SparklesIcon className="size-4" />
+                    文生图
                   </>
                 )}
               </Button>
